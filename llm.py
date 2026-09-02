@@ -93,14 +93,23 @@ def _llm_api_key(cfg: dict) -> str:
     )
 
 
+_client_cache = {}
+
+
 def _llm_client(opt):
-    """Create the OpenAI-compatible client for the configured provider."""
+    """Reuse one OpenAI client per provider URL so every chat is not a 1s+ handshake."""
     from openai import OpenAI
     cfg = _provider_cfg(opt)
-    return OpenAI(
-        api_key=_llm_api_key(cfg),
-        base_url=_llm_base_url(opt, cfg),
-    )
+    base_url = _llm_base_url(opt, cfg)
+    key = (_llm_provider(opt), base_url)
+    client = _client_cache.get(key)
+    if client is None:
+        client = OpenAI(
+            api_key=_llm_api_key(cfg),
+            base_url=base_url,
+        )
+        _client_cache[key] = client
+    return client
 
 
 def _as_bool(value, default=False) -> bool:
@@ -186,7 +195,7 @@ def llm_response(message, avatar_session: "BaseAvatar", datainfo: dict = {}):
         create_kwargs = {
             "model": model,
             "messages": [
-                {'role': 'system', 'content': '你是一个知识助手，尽量以简短、口语化的方式输出，输出内容口语化，不要使用markdown'},
+                {'role': 'system', 'content': '你是一个知识助手，尽量以简短、口语化的方式输出，不要使用markdown。第一句话先用十个字以内点题，后面再展开。'},
                 {'role': 'user', 'content': message},
             ],
             "stream": True,

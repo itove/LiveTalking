@@ -54,10 +54,12 @@ class OmniTTS(BaseTTS):
         #                      "Qwen/Qwen3-TTS-12Hz-1.7B-CustomVoice")
         self.language = getattr(opt, "omni_tts_language", "Auto")
         self.speed = float(getattr(opt, "omni_tts_speed", 1.0))
-        self.response_format = getattr(opt, "omni_tts_format", "wav")
+        self.response_format = getattr(opt, "omni_tts_format", "pcm")
         self.task_type = getattr(opt, "omni_tts_task_type", "CustomVoice")
         self.instructions = getattr(opt, "omni_tts_instructions", "")
         self.src_sr = int(getattr(opt, "omni_tts_src_sr", DEFAULT_SRC_SR))
+        self.model = getattr(opt, "omni_tts_model", "")
+        self._http = requests.Session()
 
         logger.info(
             f"OmniTTS init: server={self.server_url}, "
@@ -119,14 +121,14 @@ class OmniTTS(BaseTTS):
         }
         if instructions:
             body["instructions"] = instructions
-        # if ref_text:
-        #     body["ref_text"] = ref_text
+        if self.model:
+            body["model"] = self.model
 
         start = time.perf_counter()
-        logger.info(f"OmniTTS POST {url} voice={voice} text={text[:60]}...")
+        logger.info(f"OmniTTS POST {url} voice={voice} format={self.response_format} text={text[:60]}...")
 
         try:
-            res = requests.post(
+            res = self._http.post(
                 url,
                 json=body,
                 stream=True,

@@ -17,6 +17,9 @@ def _opt(**kwargs):
 
 
 class LlmClientTests(unittest.TestCase):
+    def setUp(self):
+        llm._client_cache.clear()
+
     def test_ensure_v1_appends_once(self):
         self.assertEqual(llm._ensure_v1("http://host:8000"), "http://host:8000/v1")
         self.assertEqual(llm._ensure_v1("http://host:8000/v1"), "http://host:8000/v1")
@@ -79,6 +82,12 @@ class LlmClientTests(unittest.TestCase):
             api_key="EMPTY",
             base_url="http://127.0.0.1:8000/v1",
         )
+        llm._llm_client(_opt(
+            llm_provider="openai",
+            llm_base_url="http://127.0.0.1:8000",
+            llm_model="Qwen3-27B",
+        ))
+        self.assertEqual(mock_openai.call_count, 1)
 
     def test_dashscope_default_model(self):
         self.assertEqual(llm._llm_model(_opt()), "qwen-plus")

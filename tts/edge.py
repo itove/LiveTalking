@@ -53,6 +53,15 @@ class EdgeTTS(BaseTTS):
     # Overlap the next Microsoft round-trip with current playback.
     synth_workers = 2
 
+    def __init__(self, opt, parent):
+        super().__init__(opt, parent)
+        logger.warning(
+            "edgetts uses Microsoft's cloud; first audio is often ~6s from this "
+            "network because the MP3 is held until synthesis finishes. "
+            "For local Qwen TTS: --tts omnitts --TTS_SERVER http://<host>:<port> "
+            "--REF_FILE <voice>"
+        )
+
     def txt_to_audio(self, msg: tuple[str, dict]):
         """Stream the current sentence so first audio is not delayed ~7s."""
         text, textevent = msg
@@ -141,10 +150,17 @@ class EdgeTTS(BaseTTS):
     async def _stream_into(self, voicename: str, text: str, buf):
         try:
             communicate = edge_tts.Communicate(text, voicename)
+            first = True
+            t0 = time.perf_counter()
             async for chunk in communicate.stream():
                 if self.state != State.RUNNING:
                     break
                 if chunk["type"] == "audio":
+                    if first:
+                        logger.info(
+                            f"edge tts first mp3 byte: {time.perf_counter() - t0:.3f}s"
+                        )
+                        first = False
                     buf.write(chunk["data"])
         except BrokenPipeError:
             return
