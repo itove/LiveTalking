@@ -82,10 +82,22 @@ Linux CUDA 环境搭建参考: <https://zhuanlan.zhihu.com/p/674972886>
 
 Wav2Lip 可通过 `torch-npu` 直接加载 `.pth`，无需转 OM。社区反馈见 [#567](https://github.com/lipku/LiveTalking/issues/567)、[#574](https://github.com/lipku/LiveTalking/issues/574)。请勿使用 issue 574 中的 `torch 2.1.0` / `torch-npu 2.1.0rc1`（那是 310P3 时期的组合）。
 
-1. 安装与本机匹配的 CANN 及固件，并执行 `source /usr/local/Ascend/ascend-toolkit/set_env.sh`
-2. 安装 **CPU 版** PyTorch 以及与 CANN 对应的 `torch-npu`（对照 [TorchNPU 兼容表](https://github.com/Ascend/pytorch/blob/master/COMPATIBILITY.en.md)）。`torch` 与 `torch-npu` 的 **主版本.次版本必须相同**（例如都是 2.7.x）。README 1.1 中的 CUDA cu128 轮子不能在 NPU 上使用。Python 建议 3.10–3.12；3.14 很容易与现有 `torch-npu` 轮子 ABI/钩子不兼容
-3. `pip install -r requirements.txt`
-4. 确认设备：`python -c "import torch; print(torch.__version__)"; python -c "import importlib.metadata as m; print(m.version('torch-npu'))"; python -c "import torch, torch_npu; print(torch.npu.is_available(), torch.npu.get_device_name(0))"`
+1. 安装与本机匹配的 CANN 及固件，并执行 `source /usr/local/Ascend/ascend-toolkit/latest/set_env.sh`
+2. 先看 toolkit 版本：`cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg`，再对照 [TorchNPU 兼容表](https://github.com/Ascend/pytorch/blob/master/COMPATIBILITY.en.md) 选出 **同一主次版本** 的 CPU `torch` 和 `torch-npu`。驱动 `24.1.rc2` 一般对应 CANN 8.x，**不要**装 torch 2.14 或 CANN 9.1 那一行。
+3. **先装 torch，再装 requirements**。`requirements.txt` 不钉 torch，`uv pip install -r requirements.txt` 会经 transformers/diffusers 拉到最新 2.14（无 NPU）。正确顺序（版本换成你表里的）：
+
+```bash
+source /usr/local/Ascend/ascend-toolkit/latest/set_env.sh
+# example only — replace 2.5.1 with the table row for your version.cfg
+uv pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
+  --index-url https://download.pytorch.org/whl/cpu
+uv pip install torch-npu==2.5.1 \
+  --extra-index-url https://mirrors.huaweicloud.com/ascend/repos/pypi
+printf 'torch==2.5.1\ntorchvision==0.20.1\ntorchaudio==2.5.1\n' > constraints-npu.txt
+uv pip install -r requirements.txt -c constraints-npu.txt
+```
+
+4. 确认：`python -c "import torch, torch_npu; print(torch.__version__, torch.npu.is_available(), torch.npu.get_device_name(0))"`
 
 910B3 启动示例（口型在 NPU 上推理；TTS 走已有 Qwen3 Omni 服务，勿把 CosyVoice / GPT-SoVITS 迁进本进程）：
 

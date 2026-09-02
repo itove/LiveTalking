@@ -1,0 +1,12 @@
+# Copy to constraints-npu.txt and set versions from the CANN row in
+# https://github.com/Ascend/pytorch/blob/master/COMPATIBILITY.en.md
+# Do not use these numbers blindly; they must match your toolkit version.cfg.
+#
+# Then:
+#   uv pip install torch==… torchvision==… torchaudio==… --index-url https://download.pytorch.org/whl/cpu
+#   uv pip install torch-npu==… --extra-index-url https://mirrors.huaweicloud.com/ascend/repos/pypi
+#   uv pip install -r requirements.txt -c constraints-npu.txt
+#
+# torch==2.5.1
+# torchvision==0.20.1
+# torchaudio==2.5.1

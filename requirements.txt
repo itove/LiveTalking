@@ -61,8 +61,8 @@ dashscope
 #modelscope
 
 # Ascend NPU (910B / 910B3 Wav2Lip) — Issues #567, #574
-# Install CPU PyTorch first, then a torch-npu build that matches the machine's CANN.
-# torch and torch-npu major.minor must match or libtorch_npu aborts
-# (Duplicated key 'pinned_reserve_segment_size_mb'). Prefer Python 3.10–3.12.
-# torch itself is also installed outside this file (CUDA wheel in README 1.1, CPU wheel on NPU).
+# Do NOT `uv pip install -r requirements.txt` first: transformers/diffusers will
+# pull torch 2.14 with no NPU. Install CPU torch + matching torch-npu, then:
+#   uv pip install -r requirements.txt -c constraints-npu.txt
+# See constraints-npu.example and README section 1.2.
 #torch-npu

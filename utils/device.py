@@ -48,6 +48,15 @@ def _installed_torch_npu_version():
 
 def _npu_stack_compatible():
     """Return (ok, warning_or_empty). Must not import torch_npu."""
+    if sys.version_info >= (3, 14) and os.environ.get(
+        "LIVETALKING_ALLOW_PY314_NPU", ""
+    ) not in ("1", "true", "True"):
+        return False, (
+            f"Skipping NPU: Python {sys.version.split()[0]} makes libtorch_npu "
+            "abort with duplicated allocator hooks "
+            "('pinned_reserve_segment_size_mb'). Use Python 3.10–3.12, or set "
+            "LIVETALKING_ALLOW_PY314_NPU=1 to probe anyway."
+        )
     npu_ver = _installed_torch_npu_version()
     if not npu_ver:
         return False, "torch-npu is not installed"
@@ -91,6 +100,21 @@ def _probe_torch_npu_import():
     return False, err or f"torch_npu probe exited {result.returncode}"
 
 
+def _summarize_npu_probe_error(err):
+    """Keep startup logs to one line; the C++ abort dump is not actionable."""
+    if "pinned_reserve_segment_size_mb" in err:
+        torch_ver = getattr(torch, "__version__", "?")
+        npu_ver = _installed_torch_npu_version() or "?"
+        return (
+            f"libtorch_npu aborted (Duplicated key pinned_reserve_segment_size_mb); "
+            f"torch={torch_ver} torch-npu={npu_ver} python={sys.version.split()[0]}. "
+            "Install a matching CPU torch + torch-npu pair on Python 3.10–3.12."
+        )
+    lines = [ln.strip() for ln in err.splitlines() if ln.strip()]
+    short = " | ".join(lines[:2])
+    return short[:400] if short else err[:400]
+
+
 def _try_import_torch_npu():
     """Import torch_npu once so the npu backend registers with PyTorch."""
     global _torch_npu_imported, _torch_npu_failed
@@ -109,7 +133,7 @@ def _try_import_torch_npu():
     if not ok:
         _torch_npu_failed = True
         warnings.warn(
-            f"{_CANN_LOAD_HINT} Probe import aborted ({err}). {_VERSION_HINT}",
+            f"{_CANN_LOAD_HINT} Probe import aborted ({_summarize_npu_probe_error(err)}). {_VERSION_HINT}",
             stacklevel=2,
         )
         return False
@@ -129,16 +153,60 @@ def _npu_available():
     ) and torch.npu.is_available()
 
 
+def _visible_npu_ids():
+    """Physical ids from ASCEND_RT_VISIBLE_DEVICES or ASCEND_VISIBLE_DEVICES."""
+    raw = os.environ.get("ASCEND_RT_VISIBLE_DEVICES") or os.environ.get(
+        "ASCEND_VISIBLE_DEVICES", ""
+    )
+    if not str(raw).strip():
+        return None
+    ids = []
+    for part in str(raw).replace(";", ",").split(","):
+        part = part.strip()
+        if not part:
+            continue
+        # npu-smi chip form "7" or "7.0"
+        part = part.split(".", 1)[0]
+        try:
+            ids.append(int(part))
+        except ValueError:
+            warnings.warn(
+                f"Ignoring invalid visible NPU id {part!r} in {raw!r}",
+                stacklevel=2,
+            )
+    return ids or None
+
+
 def _npu_device_index():
+    """Logical index for torch.device('npu:N').
+
+    ASCEND_DEVICE_ID is an index into the visible list when
+    ASCEND_RT_VISIBLE_DEVICES / ASCEND_VISIBLE_DEVICES is set, otherwise it is
+    the global device id. Masking to card 7 makes that card npu:0 — do not also
+    set ASCEND_DEVICE_ID=1.
+    """
     raw = os.environ.get("ASCEND_DEVICE_ID", "0")
     try:
-        return int(raw)
+        requested = int(raw)
     except (TypeError, ValueError):
         warnings.warn(
             f"Invalid ASCEND_DEVICE_ID={raw!r}, using 0",
             stacklevel=2,
         )
-        return 0
+        requested = 0
+    visible = _visible_npu_ids()
+    if visible is not None:
+        if requested < 0 or requested >= len(visible):
+            warnings.warn(
+                f"ASCEND_DEVICE_ID={requested} is out of range for visible "
+                f"NPUs {visible} (from ASCEND_RT_VISIBLE_DEVICES / "
+                f"ASCEND_VISIBLE_DEVICES). Using logical npu:0 "
+                f"(physical {visible[0]}).",
+                stacklevel=2,
+            )
+            return 0
+        return requested
+    return requested
 
 
 def _initialize_npu_device():

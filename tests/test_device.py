@@ -77,6 +77,31 @@ class DeviceInitTestCase(unittest.TestCase):
             chosen = device_mod.initialize_device()
         self.assertEqual(str(chosen), "npu:1")
 
+    def test_visible_devices_mask_uses_logical_zero(self):
+        npu = FakeNpu(available=True)
+        env = {
+            "ASCEND_RT_VISIBLE_DEVICES": "7",
+            "ASCEND_DEVICE_ID": "1",
+        }
+        with patch.dict(os.environ, env, clear=False), \
+             patch.object(device_mod, "_try_import_torch_npu", return_value=True), \
+             patch.object(device_mod.torch, "npu", npu, create=True), \
+             patch.object(device_mod.torch, "device", FakeDevice), \
+             patch.object(device_mod.torch, "tensor", MagicMock()), \
+             patch.object(device_mod.torch.cuda, "is_available", return_value=False):
+            with self.assertWarns(UserWarning):
+                chosen = device_mod.initialize_device()
+        self.assertEqual(str(chosen), "npu:0")
+
+    def test_visible_npu_ids_parses_rt_mask(self):
+        with patch.dict(
+            os.environ,
+            {"ASCEND_RT_VISIBLE_DEVICES": "7", "ASCEND_DEVICE_ID": "0"},
+            clear=False,
+        ):
+            self.assertEqual(device_mod._visible_npu_ids(), [7])
+            self.assertEqual(device_mod._npu_device_index(), 0)
+
     def test_npu_init_failure_falls_back_to_cuda(self):
         npu = FakeNpu(available=True, fail_init=True)
         with patch.object(device_mod, "_try_import_torch_npu", return_value=True), \
@@ -145,18 +170,32 @@ class DeviceInitTestCase(unittest.TestCase):
         self.assertEqual(device_mod._version_major_minor("2.1.0rc1"), ("2", "1"))
 
     def test_skips_npu_when_torch_versions_differ(self):
-        with patch.object(device_mod, "_installed_torch_npu_version", return_value="2.7.1.post8"), \
+        with patch.object(device_mod.sys, "version_info", (3, 12, 0)), \
+             patch.object(device_mod, "_installed_torch_npu_version", return_value="2.7.1.post8"), \
              patch.object(device_mod.torch, "__version__", "2.13.0+cpu"):
             ok, reason = device_mod._npu_stack_compatible()
         self.assertFalse(ok)
         self.assertIn("not compatible", reason)
 
     def test_accepts_matching_torch_npu_post_release(self):
-        with patch.object(device_mod, "_installed_torch_npu_version", return_value="2.7.1.post8"), \
+        with patch.object(device_mod.sys, "version_info", (3, 12, 0)), \
+             patch.object(device_mod, "_installed_torch_npu_version", return_value="2.7.1.post8"), \
              patch.object(device_mod.torch, "__version__", "2.7.1"):
             ok, reason = device_mod._npu_stack_compatible()
         self.assertTrue(ok)
         self.assertEqual(reason, "")
+
+    def test_skips_npu_on_python_314(self):
+        with patch.object(device_mod.sys, "version_info", (3, 14, 6)):
+            ok, reason = device_mod._npu_stack_compatible()
+        self.assertFalse(ok)
+        self.assertIn("3.10–3.12", reason)
+
+    def test_summarize_strips_allocator_abort_stack(self):
+        dump = "terminate called\n  what():  Duplicated key 'pinned_reserve_segment_size_mb' found\nframe #0: c10"
+        summary = device_mod._summarize_npu_probe_error(dump)
+        self.assertIn("pinned_reserve_segment_size_mb", summary)
+        self.assertNotIn("frame #0", summary)
 
     def test_try_import_skips_when_versions_differ(self):
         device_mod._torch_npu_imported = False

@@ -79,10 +79,21 @@ Linux CUDA environment setup: <https://zhuanlan.zhihu.com/p/674972886>
 
 Wav2Lip can load `.pth` weights through `torch-npu`; OM conversion is optional. See community notes in [#567](https://github.com/lipku/LiveTalking/issues/567) and [#574](https://github.com/lipku/LiveTalking/issues/574). Do **not** use the `torch 2.1.0` / `torch-npu 2.1.0rc1` pair from issue 574 (that was a 310P3-era stack).
 
-1. Install matching CANN and firmware, then `source /usr/local/Ascend/ascend-toolkit/set_env.sh`
-2. Install **CPU** PyTorch plus the `torch-npu` build that matches your CANN version ([TorchNPU compatibility](https://github.com/Ascend/pytorch/blob/master/COMPATIBILITY.en.md)). **torch and torch-npu must share the same major.minor** (for example both 2.7.x). The CUDA cu128 wheel in section 1.1 will not work on NPU. Prefer Python 3.10–3.12; 3.14 often does not match existing `torch-npu` wheels
-3. `pip install -r requirements.txt`
-4. Check the device: `python -c "import torch; print(torch.__version__)"; python -c "import importlib.metadata as m; print(m.version('torch-npu'))"; python -c "import torch, torch_npu; print(torch.npu.is_available(), torch.npu.get_device_name(0))"`
+1. Install matching CANN and firmware, then `source /usr/local/Ascend/ascend-toolkit/latest/set_env.sh`
+2. Read `cat /usr/local/Ascend/ascend-toolkit/latest/version.cfg` and pick the **same major.minor** CPU `torch` + `torch-npu` from the [TorchNPU table](https://github.com/Ascend/pytorch/blob/master/COMPATIBILITY.en.md). Driver `24.1.rc2` is CANN 8.x — do **not** install torch 2.14 or the CANN 9.1 row.
+3. **Install torch before requirements.** `requirements.txt` does not pin torch, so `uv pip install -r requirements.txt` pulls latest 2.14 via transformers/diffusers (no NPU). Order (replace 2.5.1 with your table row):
+
+```bash
+source /usr/local/Ascend/ascend-toolkit/latest/set_env.sh
+uv pip install torch==2.5.1 torchvision==0.20.1 torchaudio==2.5.1 \
+  --index-url https://download.pytorch.org/whl/cpu
+uv pip install torch-npu==2.5.1 \
+  --extra-index-url https://mirrors.huaweicloud.com/ascend/repos/pypi
+printf 'torch==2.5.1\ntorchvision==0.20.1\ntorchaudio==2.5.1\n' > constraints-npu.txt
+uv pip install -r requirements.txt -c constraints-npu.txt
+```
+
+4. Check: `python -c "import torch, torch_npu; print(torch.__version__, torch.npu.is_available(), torch.npu.get_device_name(0))"`
 
 Example 910B3 launch (lip-sync on NPU; TTS stays on an existing Qwen3 Omni server — do not move CosyVoice / GPT-SoVITS into this process):
 
