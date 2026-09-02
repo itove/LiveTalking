@@ -76,6 +76,24 @@ pip install -r requirements.txt
 
 Linux CUDA 环境搭建参考: <https://zhuanlan.zhihu.com/p/674972886>
 
+### 1.2 昇腾 NPU（910B / 910B3）
+
+Wav2Lip 可通过 `torch-npu` 直接加载 `.pth`，无需转 OM。社区反馈见 [#567](https://github.com/lipku/LiveTalking/issues/567)、[#574](https://github.com/lipku/LiveTalking/issues/574)。请勿使用 issue 574 中的 `torch 2.1.0` / `torch-npu 2.1.0rc1`（那是 310P3 时期的组合）。
+
+1. 安装与本机匹配的 CANN 及固件，并执行 `source /usr/local/Ascend/ascend-toolkit/set_env.sh`
+2. 安装 **CPU 版** PyTorch 以及与 CANN 对应的 `torch-npu`（对照 [TorchNPU 兼容表](https://github.com/Ascend/pytorch/blob/master/COMPATIBILITY.en.md)）。README 1.1 中的 CUDA cu128 轮子不能在 NPU 上使用
+3. `pip install -r requirements.txt`
+4. 确认设备：`python -c "import torch, torch_npu; print(torch.npu.is_available(), torch.npu.get_device_name(0))"`
+
+910B3 启动示例（口型在 NPU 上推理；TTS 走已有 Qwen3 Omni 服务，勿把 CosyVoice / GPT-SoVITS 迁进本进程）：
+
+```bash
+python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 \
+  --tts omnitts --TTS_SERVER http://<qwen-host>:<port> --REF_FILE <voice>
+```
+
+可用环境变量 `ASCEND_DEVICE_ID` 指定卡号（默认 0）。日志中应出现 `Using npu:0 for inference.`，且 `inferfps` / `finalfps` 均需 ≥ 25 才算实时。
+
 ---
 
 ## 2. 快速开始

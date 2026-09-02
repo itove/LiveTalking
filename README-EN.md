@@ -73,6 +73,24 @@ Installation FAQ: <https://doc.livetalking.ai/en/docs/faq/>
 
 Linux CUDA environment setup: <https://zhuanlan.zhihu.com/p/674972886>
 
+### 1.2 Ascend NPU (910B / 910B3)
+
+Wav2Lip can load `.pth` weights through `torch-npu`; OM conversion is optional. See community notes in [#567](https://github.com/lipku/LiveTalking/issues/567) and [#574](https://github.com/lipku/LiveTalking/issues/574). Do **not** use the `torch 2.1.0` / `torch-npu 2.1.0rc1` pair from issue 574 (that was a 310P3-era stack).
+
+1. Install matching CANN and firmware, then `source /usr/local/Ascend/ascend-toolkit/set_env.sh`
+2. Install **CPU** PyTorch plus the `torch-npu` build that matches your CANN version ([TorchNPU compatibility](https://github.com/Ascend/pytorch/blob/master/COMPATIBILITY.en.md)). The CUDA cu128 wheel in section 1.1 will not work on NPU
+3. `pip install -r requirements.txt`
+4. Check the device: `python -c "import torch, torch_npu; print(torch.npu.is_available(), torch.npu.get_device_name(0))"`
+
+Example 910B3 launch (lip-sync on NPU; TTS stays on an existing Qwen3 Omni server — do not move CosyVoice / GPT-SoVITS into this process):
+
+```bash
+python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 \
+  --tts omnitts --TTS_SERVER http://<qwen-host>:<port> --REF_FILE <voice>
+```
+
+Set `ASCEND_DEVICE_ID` to pick a card (default 0). Logs should show `Using npu:0 for inference.`, and both `inferfps` and `finalfps` must be ≥ 25 for real-time playback.
+
 ---
 
 ## 2. Quick Start

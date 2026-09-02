@@ -42,24 +42,16 @@ from avatars.base_avatar import BaseAvatar
 from tqdm import tqdm
 from utils.logger import logger
 from utils.image import read_imgs, mirror_index
-from utils.device import initialize_device
+from utils.device import initialize_device, load_checkpoint
 from registry import register
 
 device = initialize_device()
 logger.info('Using {} for inference.'.format(device))
 
-def _load(checkpoint_path):
-    if device == 'cuda':
-        checkpoint = torch.load(checkpoint_path)
-    else:
-        checkpoint = torch.load(checkpoint_path,
-                                map_location=lambda storage, loc: storage)
-    return checkpoint
-
 def load_model(path):
     model = Wav2Lip()
     logger.info("Load checkpoint from: {}".format(path))
-    checkpoint = _load(path)
+    checkpoint = load_checkpoint(path, device)
     s = checkpoint["state_dict"]
     new_s = {}
     for k, v in s.items():

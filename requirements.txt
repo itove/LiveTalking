@@ -56,3 +56,9 @@ dashscope
 # Optional: remove these lines if you don't need local ASR
 #funasr
 #modelscope
+
+# Ascend NPU (910B / 910B3 Wav2Lip) — Issues #567, #574
+# Install CPU PyTorch first, then a torch-npu build that matches the machine's CANN.
+# Do not pin a version here; see https://github.com/Ascend/pytorch/blob/master/COMPATIBILITY.en.md
+# torch itself is also installed outside this file (CUDA wheel in README 1.1, CPU wheel on NPU).
+#torch-npu
