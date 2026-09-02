@@ -157,7 +157,7 @@ def llm_response(message, avatar_session: "BaseAvatar", datainfo: dict = {}):
         create_kwargs = {
             "model": model,
             "messages": [
-                {'role': 'system', 'content': '你是一个知识助手，尽量以简短、口语化的方式输出'},
+                {'role': 'system', 'content': '你是一个知识助手，尽量以简短、口语化的方式输出，输出内容口语化，不要使用markdown'},
                 {'role': 'user', 'content': message},
             ],
             "stream": True,
