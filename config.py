@@ -85,6 +85,8 @@ def parse_args():
                         help="llm model override, empty = provider default (qwen-plus / orcarouter/auto); required for openai/vLLM")
     parser.add_argument('--llm_base_url', type=str, default='',
                         help="OpenAI-compatible chat base URL for --llm_provider openai (e.g. http://127.0.0.1:8000/v1). Also OPENAI_BASE_URL.")
+    parser.add_argument('--llm_enable_thinking', action='store_true',
+                        help="Enable Qwen thinking/reasoning. Off by default; Qwen3.8 otherwise uses xhigh.")
 
     # ─── 传输 ─────────────────────────────────────────────────────────
     parser.add_argument('--transport', type=str, default='webrtc',

@@ -103,6 +103,32 @@ def _llm_client(opt):
     )
 
 
+def _as_bool(value, default=False) -> bool:
+    if value is None or value == "":
+        return default
+    if isinstance(value, bool):
+        return value
+    return str(value).strip().lower() in ("1", "true", "yes", "on")
+
+
+def _thinking_enabled(opt) -> bool:
+    return _as_bool(getattr(opt, "llm_enable_thinking", False), default=False)
+
+
+def _chat_extra_body(opt):
+    """Kwargs that are not OpenAI-standard (vLLM / Qwen chat template).
+
+    Qwen3.8 defaults to reasoning_effort=xhigh whenever thinking is left on.
+    Spoken avatars need the hard switch off so the first audible token is not
+    delayed by a think block.
+    """
+    if _llm_provider(opt) != "openai":
+        return None
+    if _thinking_enabled(opt):
+        return None
+    return {"chat_template_kwargs": {"enable_thinking": False}}
+
+
 def _llm_model(opt) -> str:
     """Resolve the model name, falling back to the provider default."""
     cfg = _provider_cfg(opt)
@@ -122,18 +148,25 @@ def llm_response(message, avatar_session: "BaseAvatar", datainfo: dict = {}):
         client = _llm_client(opt)
         model = _llm_model(opt)
         end = time.perf_counter()
+        extra_body = _chat_extra_body(opt)
         logger.info(
             f"llm Time init: {end-start}s provider={_llm_provider(opt)} "
-            f"model={model} base_url={client.base_url} {message}"
+            f"model={model} base_url={client.base_url} "
+            f"thinking={_thinking_enabled(opt)} {message}"
         )
-        completion = client.chat.completions.create(
-            model=model,
-            messages=[{'role': 'system', 'content': '你是一个知识助手，尽量以简短、口语化的方式输出'},
-                    {'role': 'user', 'content': message}],
-            stream=True,
+        create_kwargs = {
+            "model": model,
+            "messages": [
+                {'role': 'system', 'content': '你是一个知识助手，尽量以简短、口语化的方式输出'},
+                {'role': 'user', 'content': message},
+            ],
+            "stream": True,
             # Display token usage in the last line of the streamed response.
-            stream_options={"include_usage": True}
-        )
+            "stream_options": {"include_usage": True},
+        }
+        if extra_body:
+            create_kwargs["extra_body"] = extra_body
+        completion = client.chat.completions.create(**create_kwargs)
         result = ""
         first = True
         for chunk in completion:

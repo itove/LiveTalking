@@ -83,6 +83,21 @@ class LlmClientTests(unittest.TestCase):
     def test_dashscope_default_model(self):
         self.assertEqual(llm._llm_model(_opt()), "qwen-plus")
 
+    def test_openai_disables_qwen_thinking_by_default(self):
+        extra = llm._chat_extra_body(_opt(llm_provider="openai"))
+        self.assertEqual(
+            extra, {"chat_template_kwargs": {"enable_thinking": False}}
+        )
+
+    def test_openai_thinking_opt_in_skips_extra_body(self):
+        self.assertIsNone(llm._chat_extra_body(_opt(
+            llm_provider="openai",
+            llm_enable_thinking=True,
+        )))
+
+    def test_dashscope_does_not_send_qwen_template_kwargs(self):
+        self.assertIsNone(llm._chat_extra_body(_opt()))
+
 
 if __name__ == "__main__":
     unittest.main()
