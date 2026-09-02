@@ -25,6 +25,9 @@ import json
 #from geventwebsocket.handler import WebSocketHandler
 import re
 import os
+# Prevent torch from auto-loading torch_npu before CANN is on the library path.
+# utils.device imports torch_npu explicitly when the Ascend runtime is usable.
+os.environ.setdefault("TORCH_DEVICE_BACKEND_AUTOLOAD", "0")
 import numpy as np
 from threading import Thread,Event
 #import multiprocessing

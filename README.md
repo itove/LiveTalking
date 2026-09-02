@@ -88,9 +88,12 @@ Wav2Lip 可通过 `torch-npu` 直接加载 `.pth`，无需转 OM。社区反馈�
 910B3 启动示例（口型在 NPU 上推理；TTS 走已有 Qwen3 Omni 服务，勿把 CosyVoice / GPT-SoVITS 迁进本进程）：
 
 ```bash
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
 python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 \
   --tts omnitts --TTS_SERVER http://<qwen-host>:<port> --REF_FILE <voice>
 ```
+
+未 source CANN 时，`import torch` 会因缺少 `libhccl.so` 直接退出。本仓库会关闭 PyTorch 的 NPU 自动加载并回退到 CPU/CUDA，同时给出上述提示。要真正用 910B3，必须先 source。
 
 可用环境变量 `ASCEND_DEVICE_ID` 指定卡号（默认 0）。日志中应出现 `Using npu:0 for inference.`，且 `inferfps` / `finalfps` 均需 ≥ 25 才算实时。
 

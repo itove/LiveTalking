@@ -113,8 +113,33 @@ class DeviceInitTestCase(unittest.TestCase):
             chosen = device_mod.initialize_device()
         self.assertEqual(str(chosen), "cpu")
 
+    def test_missing_torch_npu_package_is_silent(self):
+        device_mod._torch_npu_imported = False
+        with patch.object(device_mod.importlib.util, "find_spec", return_value=None):
+            self.assertFalse(device_mod._try_import_torch_npu())
+
+    def test_torch_npu_hccl_failure_warns_and_returns_false(self):
+        device_mod._torch_npu_imported = False
+        real_import = __import__
+
+        def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name == "torch_npu" or name.startswith("torch_npu."):
+                raise ImportError(
+                    "libhccl.so: cannot open shared object file: No such file or directory"
+                )
+            return real_import(name, globals, locals, fromlist, level)
+
+        with patch.object(device_mod.importlib.util, "find_spec", return_value=object()), \
+             patch("builtins.__import__", fake_import):
+            with self.assertWarns(UserWarning):
+                self.assertFalse(device_mod._try_import_torch_npu())
+        self.assertFalse(device_mod._torch_npu_imported)
+
 
 class DeviceHelperTestCase(unittest.TestCase):
+    def test_disables_backend_autoload(self):
+        self.assertEqual(os.environ.get("TORCH_DEVICE_BACKEND_AUTOLOAD"), "0")
+
     def test_is_accelerator(self):
         self.assertTrue(device_mod.is_accelerator(torch.device("cuda")))
         self.assertTrue(device_mod.is_accelerator(FakeDevice("npu:0")))

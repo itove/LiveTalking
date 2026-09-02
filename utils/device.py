@@ -1,9 +1,19 @@
+import importlib.util
 import os
 import warnings
+
+# PyTorch 2.5+ auto-loads torch_npu on `import torch` via entry points.
+# That crashes with libhccl.so when CANN is not sourced. Load NPU ourselves.
+os.environ.setdefault("TORCH_DEVICE_BACKEND_AUTOLOAD", "0")
 
 import torch
 
 _torch_npu_imported = False
+
+_CANN_LOAD_HINT = (
+    "torch_npu is installed but failed to load. Source CANN before starting: "
+    "source /usr/local/Ascend/ascend-toolkit/set_env.sh"
+)
 
 
 def _try_import_torch_npu():
@@ -11,11 +21,14 @@ def _try_import_torch_npu():
     global _torch_npu_imported
     if _torch_npu_imported:
         return True
+    if importlib.util.find_spec("torch_npu") is None:
+        return False
     try:
         import torch_npu  # noqa: F401
         _torch_npu_imported = True
         return True
-    except ImportError:
+    except Exception as e:
+        warnings.warn(f"{_CANN_LOAD_HINT} ({e})", stacklevel=2)
         return False
 
 

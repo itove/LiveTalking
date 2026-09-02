@@ -85,9 +85,12 @@ Wav2Lip can load `.pth` weights through `torch-npu`; OM conversion is optional. 
 Example 910B3 launch (lip-sync on NPU; TTS stays on an existing Qwen3 Omni server — do not move CosyVoice / GPT-SoVITS into this process):
 
 ```bash
+source /usr/local/Ascend/ascend-toolkit/set_env.sh
 python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 \
   --tts omnitts --TTS_SERVER http://<qwen-host>:<port> --REF_FILE <voice>
 ```
+
+If CANN is not sourced, `import torch` used to abort on missing `libhccl.so`. This repo disables PyTorch NPU auto-loading and falls back to CPU/CUDA with a warning. For 910B3 inference you still must source CANN first.
 
 Set `ASCEND_DEVICE_ID` to pick a card (default 0). Logs should show `Using npu:0 for inference.`, and both `inferfps` and `finalfps` must be ≥ 25 for real-time playback.
 
