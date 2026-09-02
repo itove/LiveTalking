@@ -1,4 +1,5 @@
-from threading import Thread
+import time
+from threading import Event, Lock, Thread
 from concurrent.futures import ThreadPoolExecutor, TimeoutError as FuturesTimeout
 from collections import deque
 import queue
@@ -61,47 +62,68 @@ class BaseTTS:
         self.stop_tts()
         logger.info('ttsreal thread stop')
 
-    def _process_tts_prefetch(self, quit_event):
-        """Synthesize upcoming sentences in parallel so playback does not stall.
+    def _enqueue_prefetch(self, pool, pending, lock):
+        with lock:
+            while len(pending) < self.synth_workers:
+                try:
+                    msg = self.msgqueue.get(block=False)
+                except queue.Empty:
+                    return
+                self.state = State.RUNNING
+                pending.append(
+                    (pool.submit(self.synthesize, msg), msg, self._tts_gen)
+                )
 
-        Edge TTS takes several seconds per request. If we only start the next
-        sentence after the current audio has drained, the avatar goes silent
-        for that whole round-trip.
+    def _process_tts_prefetch(self, quit_event):
+        """Stream the first sentence; synthesize the next ones in the background.
+
+        Edge TTS takes several seconds per request. Waiting for the full first
+        clip before any PCM is why the avatar stayed silent for ~7s. Later
+        sentences still prefetch so playback does not stall between them.
         """
         pending = deque()
+        lock = Lock()
         pool = ThreadPoolExecutor(max_workers=self.synth_workers)
         try:
             while not quit_event.is_set():
-                while len(pending) < self.synth_workers:
+                if pending:
+                    self._enqueue_prefetch(pool, pending, lock)
+                    with lock:
+                        fut, msg, gen = pending[0]
                     try:
-                        msg = self.msgqueue.get(block=False)
-                    except queue.Empty:
-                        break
-                    self.state = State.RUNNING
-                    gen = self._tts_gen
-                    pending.append((pool.submit(self.synthesize, msg), msg, gen))
-
-                if not pending:
-                    try:
-                        msg = self.msgqueue.get(block=True, timeout=0.2)
-                    except queue.Empty:
+                        pcm = fut.result(timeout=0.2)
+                    except FuturesTimeout:
                         continue
-                    self.state = State.RUNNING
-                    gen = self._tts_gen
-                    pending.append((pool.submit(self.synthesize, msg), msg, gen))
+                    with lock:
+                        pending.popleft()
+                    if gen != self._tts_gen or self.state != State.RUNNING:
+                        continue
+                    if pcm is None or getattr(pcm, "size", 0) == 0:
+                        continue
+                    self.push_pcm(pcm, msg)
                     continue
 
-                fut, msg, gen = pending[0]
                 try:
-                    pcm = fut.result(timeout=0.2)
-                except FuturesTimeout:
+                    msg = self.msgqueue.get(block=True, timeout=0.2)
+                except queue.Empty:
                     continue
-                pending.popleft()
-                if gen != self._tts_gen or self.state != State.RUNNING:
-                    continue
-                if pcm is None or getattr(pcm, "size", 0) == 0:
-                    continue
-                self.push_pcm(pcm, msg)
+                self.state = State.RUNNING
+                gen = self._tts_gen
+                stop = Event()
+
+                def _fill():
+                    while not stop.is_set() and not quit_event.is_set():
+                        self._enqueue_prefetch(pool, pending, lock)
+                        time.sleep(0.05)
+
+                filler = Thread(target=_fill, daemon=True)
+                filler.start()
+                try:
+                    if gen == self._tts_gen and self.state == State.RUNNING:
+                        self.txt_to_audio(msg)
+                finally:
+                    stop.set()
+                    filler.join(timeout=2)
         finally:
             pool.shutdown(wait=False, cancel_futures=True)
 
