@@ -80,6 +80,15 @@ def _probe_torch_npu_import():
         return True, ""
     env = os.environ.copy()
     env["TORCH_DEVICE_BACKEND_AUTOLOAD"] = "0"
+    extra = ":".join(
+        p for p in (
+            "/usr/local/Ascend/driver/lib64/driver",
+            "/usr/local/Ascend/driver/lib64/common",
+            "/usr/local/Ascend/driver/lib64",
+        ) if os.path.isdir(p)
+    )
+    if extra:
+        env["LD_LIBRARY_PATH"] = extra + ":" + env.get("LD_LIBRARY_PATH", "")
     try:
         result = subprocess.run(
             [
@@ -115,6 +124,42 @@ def _summarize_npu_probe_error(err):
     return short[:400] if short else err[:400]
 
 
+_HAL_SO_CANDIDATES = (
+    "/usr/local/Ascend/driver/lib64/driver/libascend_hal.so",
+    "/usr/local/Ascend/driver/lib64/common/libascend_hal.so",
+    "/usr/local/Ascend/driver/lib64/libascend_hal.so",
+)
+
+_NPU_INVISIBLE_HINT = (
+    "torch_npu imported but ascend_hal reports no devices. "
+    "In this shell: source /usr/local/Ascend/ascend-toolkit/latest/set_env.sh; "
+    "npu-smi info; l /dev/davinci*; groups (usually need HwHiAiUser). "
+    "Also check LD_LIBRARY_PATH includes /usr/local/Ascend/driver/lib64/driver. "
+    "CANN 9.0.0 with HDK 24.1.rc2.2 is a known mismatch."
+)
+
+
+def _preload_ascend_hal():
+    """dlopen libascend_hal.so by absolute path.
+
+    Changing LD_LIBRARY_PATH inside Python does not affect the dynamic linker.
+    npu-smi can work while torch_npu still reports 'Can't get ascend_hal device count'.
+    """
+    import ctypes
+
+    loaded = []
+    for path in _HAL_SO_CANDIDATES:
+        if not os.path.isfile(path):
+            continue
+        try:
+            ctypes.CDLL(path, mode=ctypes.RTLD_GLOBAL)
+            loaded.append(path)
+            break
+        except OSError as e:
+            warnings.warn(f"Failed to preload {path}: {e}", stacklevel=2)
+    return loaded
+
+
 def _try_import_torch_npu():
     """Import torch_npu once so the npu backend registers with PyTorch."""
     global _torch_npu_imported, _torch_npu_failed
@@ -138,6 +183,7 @@ def _try_import_torch_npu():
         )
         return False
     try:
+        _preload_ascend_hal()
         import torch_npu  # noqa: F401
         _torch_npu_imported = True
         return True
@@ -227,8 +273,18 @@ def _initialize_npu_device():
 
 def initialize_device():
     """Pick an inference device: NPU, then CUDA, then MPS, then CPU."""
-    _try_import_torch_npu()
-    if _npu_available():
+    loaded = _try_import_torch_npu()
+    if loaded and not _npu_available():
+        count = 0
+        try:
+            count = torch.npu.device_count()
+        except Exception:
+            pass
+        warnings.warn(
+            f"{_NPU_INVISIBLE_HINT} torch.npu.device_count()={count}.",
+            stacklevel=2,
+        )
+    if loaded and _npu_available():
         npu = _initialize_npu_device()
         if npu is not None:
             return npu
