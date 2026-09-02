@@ -28,6 +28,7 @@ llm_provider: dashscope        # dashscope / orcarouter / openai (aliases: vllm,
 llm_model: ''                  # model override; required for openai/vLLM (GET /v1/models id)
 llm_base_url: ''               # openai provider only, e.g. http://<qwen-host>:<port>/v1 (not TTS_SERVER)
 llm_enable_thinking: false     # Qwen3.8 defaults to xhigh thinking; keep off so TTS is not delayed
+llm_history: 20                # max user/assistant messages per session (0 = no memory)
 
 # -------- Transport ----------------------------------------------------------
 transport: webrtc              # rtcpush / webrtc / rtmp / virtualcam

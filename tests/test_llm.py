@@ -11,6 +11,7 @@ def _opt(**kwargs):
         "llm_provider": "dashscope",
         "llm_model": "",
         "llm_base_url": "",
+        "llm_history": 20,
     }
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)
@@ -126,6 +127,57 @@ class LlmClientTests(unittest.TestCase):
         pieces, rest = llm.take_spoken_segments("", text)
         self.assertEqual(pieces, [text])
         self.assertEqual(rest, "")
+
+    def test_begin_turn_includes_prior_history(self):
+        history = [
+            {"role": "user", "content": "我叫小明"},
+            {"role": "assistant", "content": "好的小明"},
+        ]
+        messages = llm._begin_user_turn(history, "我叫什么？", 20)
+        self.assertEqual(messages[0]["role"], "system")
+        self.assertEqual(messages[1]["content"], "我叫小明")
+        self.assertEqual(messages[2]["content"], "好的小明")
+        self.assertEqual(messages[3], {"role": "user", "content": "我叫什么？"})
+        self.assertEqual(len(history), 3)
+
+    def test_history_zero_does_not_store_or_replay(self):
+        history = [
+            {"role": "user", "content": "旧问题"},
+            {"role": "assistant", "content": "旧回答"},
+        ]
+        snapshot = list(history)
+        messages = llm._begin_user_turn(history, "新问题", 0)
+        self.assertEqual(history, snapshot)
+        self.assertEqual(
+            messages,
+            [
+                {"role": "system", "content": llm._SYSTEM_PROMPT},
+                {"role": "user", "content": "新问题"},
+            ],
+        )
+        llm._finish_assistant_turn(history, "新回答", 0)
+        self.assertEqual(history, snapshot)
+
+    def test_trim_keeps_newest_messages_by_pairs(self):
+        history = []
+        for i in range(12):
+            history.append({"role": "user", "content": f"u{i}"})
+            history.append({"role": "assistant", "content": f"a{i}"})
+        llm._trim_history(history, 20)
+        self.assertEqual(len(history), 20)
+        self.assertEqual(history[0]["content"], "u2")
+        self.assertEqual(history[-1]["content"], "a11")
+
+    def test_finish_turn_appends_assistant_then_trims(self):
+        history = [{"role": "user", "content": "hi"}]
+        llm._finish_assistant_turn(history, "hello", 20)
+        self.assertEqual(
+            history,
+            [
+                {"role": "user", "content": "hi"},
+                {"role": "assistant", "content": "hello"},
+            ],
+        )
 
 
 if __name__ == "__main__":

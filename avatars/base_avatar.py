@@ -30,7 +30,7 @@ import glob
 import resampy
 import queue
 from queue import Queue
-from threading import Thread, Event
+from threading import Thread, Event, Lock
 from io import BytesIO
 import soundfile as sf
 import asyncio
@@ -66,6 +66,8 @@ class BaseAvatar:
         self.sample_rate = 16000
         self.chunk = self.sample_rate // (opt.fps*2) # 320 samples per chunk (20ms)
         self.sessionid = self.opt.sessionid
+        self.llm_history = []
+        self.llm_lock = Lock()
 
         self.speaking = False
         self.recording = False

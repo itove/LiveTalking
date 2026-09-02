@@ -150,6 +150,48 @@ def _llm_model(opt) -> str:
     return model
 
 
+_SYSTEM_PROMPT = (
+    "你是一个知识助手，尽量以简短、口语化的方式输出，不要使用markdown。"
+    "第一句话先用十个字以内点题，后面再展开。"
+)
+
+
+def _history_limit(opt) -> int:
+    try:
+        n = int(getattr(opt, "llm_history", 20) or 0)
+    except (TypeError, ValueError):
+        n = 20
+    return max(0, n)
+
+
+def _trim_history(history: list, limit: int) -> None:
+    """Keep the newest `limit` messages, dropping oldest user/assistant pairs."""
+    if limit <= 0:
+        history.clear()
+        return
+    while len(history) > limit:
+        del history[: 2 if len(history) >= 2 else 1]
+
+
+def _begin_user_turn(history: list, message: str, limit: int) -> list:
+    """Append the user turn when memory is on; return the API messages list."""
+    system = {"role": "system", "content": _SYSTEM_PROMPT}
+    if limit <= 0:
+        return [system, {"role": "user", "content": message}]
+    history.append({"role": "user", "content": message})
+    return [system, *({"role": m["role"], "content": m["content"]} for m in history)]
+
+
+def _finish_assistant_turn(history: list, content: str, limit: int) -> None:
+    if limit <= 0:
+        return
+    if content:
+        history.append({"role": "assistant", "content": content})
+    elif history and history[-1].get("role") == "user":
+        history.pop()
+    _trim_history(history, limit)
+
+
 # Flush TTS at sentence end. Commas only flush once the clause is already
 # long enough that Edge's ~7s round-trip can hide behind playback.
 _SENTENCE_END = frozenset("。！？.!?")
@@ -187,44 +229,59 @@ def llm_response(message, avatar_session: "BaseAvatar", datainfo: dict = {}):
         model = _llm_model(opt)
         end = time.perf_counter()
         extra_body = _chat_extra_body(opt)
-        logger.info(
-            f"llm Time init: {end-start}s provider={_llm_provider(opt)} "
-            f"model={model} base_url={client.base_url} "
-            f"thinking={_thinking_enabled(opt)} {message}"
-        )
-        create_kwargs = {
-            "model": model,
-            "messages": [
-                {'role': 'system', 'content': '你是一个知识助手，尽量以简短、口语化的方式输出，不要使用markdown。第一句话先用十个字以内点题，后面再展开。'},
-                {'role': 'user', 'content': message},
-            ],
-            "stream": True,
-            # Display token usage in the last line of the streamed response.
-            "stream_options": {"include_usage": True},
-        }
-        if extra_body:
-            create_kwargs["extra_body"] = extra_body
-        completion = client.chat.completions.create(**create_kwargs)
-        result = ""
-        first = True
-        for chunk in completion:
-            if len(chunk.choices) > 0:
-                #print(chunk.choices[0].delta.content)
-                if first:
-                    end = time.perf_counter()
-                    logger.info(f"llm Time to first chunk: {end-start}s")
-                    first = False
-                msg = chunk.choices[0].delta.content
-                if msg is None:
-                    continue
-                pieces, result = take_spoken_segments(result, msg)
-                for piece in pieces:
-                    logger.info(piece)
-                    avatar_session.put_msg_txt(piece, datainfo)
-        end = time.perf_counter()
-        logger.info(f"llm Time to last chunk: {end-start}s")
-        if result:
-            avatar_session.put_msg_txt(result, datainfo)
+        limit = _history_limit(opt)
+        history = getattr(avatar_session, "llm_history", None)
+        if history is None:
+            history = []
+            avatar_session.llm_history = history
+        lock = getattr(avatar_session, "llm_lock", None)
+        if lock is None:
+            from threading import Lock
+            lock = Lock()
+            avatar_session.llm_lock = lock
+
+        with lock:
+            messages = _begin_user_turn(history, message, limit)
+            logger.info(
+                f"llm Time init: {end-start}s provider={_llm_provider(opt)} "
+                f"model={model} base_url={client.base_url} "
+                f"thinking={_thinking_enabled(opt)} history={len(history)} {message}"
+            )
+            create_kwargs = {
+                "model": model,
+                "messages": messages,
+                "stream": True,
+                # Display token usage in the last line of the streamed response.
+                "stream_options": {"include_usage": True},
+            }
+            if extra_body:
+                create_kwargs["extra_body"] = extra_body
+            full = []
+            result = ""
+            try:
+                completion = client.chat.completions.create(**create_kwargs)
+                first = True
+                for chunk in completion:
+                    if len(chunk.choices) > 0:
+                        #print(chunk.choices[0].delta.content)
+                        if first:
+                            end = time.perf_counter()
+                            logger.info(f"llm Time to first chunk: {end-start}s")
+                            first = False
+                        msg = chunk.choices[0].delta.content
+                        if msg is None:
+                            continue
+                        full.append(msg)
+                        pieces, result = take_spoken_segments(result, msg)
+                        for piece in pieces:
+                            logger.info(piece)
+                            avatar_session.put_msg_txt(piece, datainfo)
+                end = time.perf_counter()
+                logger.info(f"llm Time to last chunk: {end-start}s")
+                if result:
+                    avatar_session.put_msg_txt(result, datainfo)
+            finally:
+                _finish_assistant_turn(history, "".join(full), limit)
 
     except Exception:
         logger.exception("llm exception:")
