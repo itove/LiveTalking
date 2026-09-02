@@ -21,7 +21,10 @@ scipy
 ##numba
 resampy
 #pyaudio
-soundfile==0.12.1
+# 0.12.1 is a ctypes wrapper only; Linux aarch64 has no bundled libsndfile until 0.13.
+# 0.13+ ships libsndfile in manylinux_aarch64 wheels. If pip still installs a
+# tiny py3-none-any wheel, install the OS library: apt/yum/dnf install libsndfile1
+soundfile>=0.13.1
 einops
 #configargparse
 
@@ -59,6 +62,7 @@ dashscope
 
 # Ascend NPU (910B / 910B3 Wav2Lip) — Issues #567, #574
 # Install CPU PyTorch first, then a torch-npu build that matches the machine's CANN.
-# Do not pin a version here; see https://github.com/Ascend/pytorch/blob/master/COMPATIBILITY.en.md
+# torch and torch-npu major.minor must match or libtorch_npu aborts
+# (Duplicated key 'pinned_reserve_segment_size_mb'). Prefer Python 3.10–3.12.
 # torch itself is also installed outside this file (CUDA wheel in README 1.1, CPU wheel on NPU).
 #torch-npu

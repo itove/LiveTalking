@@ -51,6 +51,7 @@ class FakeNpu:
 class DeviceInitTestCase(unittest.TestCase):
     def setUp(self):
         device_mod._torch_npu_imported = False
+        device_mod._torch_npu_failed = False
 
     def test_prefers_npu_over_cuda(self):
         npu = FakeNpu(available=True)
@@ -130,10 +131,42 @@ class DeviceInitTestCase(unittest.TestCase):
             return real_import(name, globals, locals, fromlist, level)
 
         with patch.object(device_mod.importlib.util, "find_spec", return_value=object()), \
+             patch.object(device_mod, "_npu_stack_compatible", return_value=(True, "")), \
+             patch.object(device_mod, "_probe_torch_npu_import", return_value=(True, "")), \
              patch("builtins.__import__", fake_import):
             with self.assertWarns(UserWarning):
                 self.assertFalse(device_mod._try_import_torch_npu())
         self.assertFalse(device_mod._torch_npu_imported)
+
+
+    def test_version_major_minor(self):
+        self.assertEqual(device_mod._version_major_minor("2.13.0+cpu"), ("2", "13"))
+        self.assertEqual(device_mod._version_major_minor("2.7.1.post8"), ("2", "7"))
+        self.assertEqual(device_mod._version_major_minor("2.1.0rc1"), ("2", "1"))
+
+    def test_skips_npu_when_torch_versions_differ(self):
+        with patch.object(device_mod, "_installed_torch_npu_version", return_value="2.7.1.post8"), \
+             patch.object(device_mod.torch, "__version__", "2.13.0+cpu"):
+            ok, reason = device_mod._npu_stack_compatible()
+        self.assertFalse(ok)
+        self.assertIn("not compatible", reason)
+
+    def test_accepts_matching_torch_npu_post_release(self):
+        with patch.object(device_mod, "_installed_torch_npu_version", return_value="2.7.1.post8"), \
+             patch.object(device_mod.torch, "__version__", "2.7.1"):
+            ok, reason = device_mod._npu_stack_compatible()
+        self.assertTrue(ok)
+        self.assertEqual(reason, "")
+
+    def test_try_import_skips_when_versions_differ(self):
+        device_mod._torch_npu_imported = False
+        device_mod._torch_npu_failed = False
+        with patch.object(device_mod.importlib.util, "find_spec", return_value=object()), \
+             patch.object(device_mod, "_npu_stack_compatible",
+                          return_value=(False, "Skipping NPU: mismatch")):
+            with self.assertWarns(UserWarning):
+                self.assertFalse(device_mod._try_import_torch_npu())
+        self.assertTrue(device_mod._torch_npu_failed)
 
 
 class DeviceHelperTestCase(unittest.TestCase):

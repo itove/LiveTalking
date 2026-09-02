@@ -69,6 +69,8 @@ cd LiveTalking
 pip install -r requirements.txt
 ```
 
+Linux audio also needs the `libsndfile` system library. `soundfile>=0.13` wheels for aarch64/x86_64 bundle it; if pip installs a pure-Python package instead, run `sudo apt install libsndfile1` (EulerOS/openEuler: `sudo yum install libsndfile`).
+
 Installation FAQ: <https://doc.livetalking.ai/en/docs/faq/>
 
 Linux CUDA environment setup: <https://zhuanlan.zhihu.com/p/674972886>
@@ -78,9 +80,9 @@ Linux CUDA environment setup: <https://zhuanlan.zhihu.com/p/674972886>
 Wav2Lip can load `.pth` weights through `torch-npu`; OM conversion is optional. See community notes in [#567](https://github.com/lipku/LiveTalking/issues/567) and [#574](https://github.com/lipku/LiveTalking/issues/574). Do **not** use the `torch 2.1.0` / `torch-npu 2.1.0rc1` pair from issue 574 (that was a 310P3-era stack).
 
 1. Install matching CANN and firmware, then `source /usr/local/Ascend/ascend-toolkit/set_env.sh`
-2. Install **CPU** PyTorch plus the `torch-npu` build that matches your CANN version ([TorchNPU compatibility](https://github.com/Ascend/pytorch/blob/master/COMPATIBILITY.en.md)). The CUDA cu128 wheel in section 1.1 will not work on NPU
+2. Install **CPU** PyTorch plus the `torch-npu` build that matches your CANN version ([TorchNPU compatibility](https://github.com/Ascend/pytorch/blob/master/COMPATIBILITY.en.md)). **torch and torch-npu must share the same major.minor** (for example both 2.7.x). The CUDA cu128 wheel in section 1.1 will not work on NPU. Prefer Python 3.10–3.12; 3.14 often does not match existing `torch-npu` wheels
 3. `pip install -r requirements.txt`
-4. Check the device: `python -c "import torch, torch_npu; print(torch.npu.is_available(), torch.npu.get_device_name(0))"`
+4. Check the device: `python -c "import torch; print(torch.__version__)"; python -c "import importlib.metadata as m; print(m.version('torch-npu'))"; python -c "import torch, torch_npu; print(torch.npu.is_available(), torch.npu.get_device_name(0))"`
 
 Example 910B3 launch (lip-sync on NPU; TTS stays on an existing Qwen3 Omni server — do not move CosyVoice / GPT-SoVITS into this process):
 
@@ -90,7 +92,7 @@ python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 
   --tts omnitts --TTS_SERVER http://<qwen-host>:<port> --REF_FILE <voice>
 ```
 
-If CANN is not sourced, `import torch` used to abort on missing `libhccl.so`. This repo disables PyTorch NPU auto-loading and falls back to CPU/CUDA with a warning. For 910B3 inference you still must source CANN first.
+If CANN is not sourced, `import torch` used to abort on missing `libhccl.so`. If you see `Duplicated key 'pinned_reserve_segment_size_mb'` and a core dump, torch and torch-npu do not match (C++ `abort()`, not a Python exception). This repo checks versions and probes the import in a child process, then falls back to CPU/CUDA. For 910B3 inference you still must source CANN and install a matching pair.
 
 Set `ASCEND_DEVICE_ID` to pick a card (default 0). Logs should show `Using npu:0 for inference.`, and both `inferfps` and `finalfps` must be ≥ 25 for real-time playback.
 

@@ -72,6 +72,8 @@ cd LiveTalking
 pip install -r requirements.txt
 ```
 
+Linux 音频还依赖系统库 `libsndfile`。`soundfile>=0.13` 的 aarch64/x86_64 wheel 会自带该库；若 pip 装到的是纯 Python 包，请执行 `sudo apt install libsndfile1`（EulerOS/openEuler: `sudo yum install libsndfile`）。
+
 安装常见问题：[FAQ](https://doc.livetalking.ai/docs/faq/)
 
 Linux CUDA 环境搭建参考: <https://zhuanlan.zhihu.com/p/674972886>
@@ -81,9 +83,9 @@ Linux CUDA 环境搭建参考: <https://zhuanlan.zhihu.com/p/674972886>
 Wav2Lip 可通过 `torch-npu` 直接加载 `.pth`，无需转 OM。社区反馈见 [#567](https://github.com/lipku/LiveTalking/issues/567)、[#574](https://github.com/lipku/LiveTalking/issues/574)。请勿使用 issue 574 中的 `torch 2.1.0` / `torch-npu 2.1.0rc1`（那是 310P3 时期的组合）。
 
 1. 安装与本机匹配的 CANN 及固件，并执行 `source /usr/local/Ascend/ascend-toolkit/set_env.sh`
-2. 安装 **CPU 版** PyTorch 以及与 CANN 对应的 `torch-npu`（对照 [TorchNPU 兼容表](https://github.com/Ascend/pytorch/blob/master/COMPATIBILITY.en.md)）。README 1.1 中的 CUDA cu128 轮子不能在 NPU 上使用
+2. 安装 **CPU 版** PyTorch 以及与 CANN 对应的 `torch-npu`（对照 [TorchNPU 兼容表](https://github.com/Ascend/pytorch/blob/master/COMPATIBILITY.en.md)）。`torch` 与 `torch-npu` 的 **主版本.次版本必须相同**（例如都是 2.7.x）。README 1.1 中的 CUDA cu128 轮子不能在 NPU 上使用。Python 建议 3.10–3.12；3.14 很容易与现有 `torch-npu` 轮子 ABI/钩子不兼容
 3. `pip install -r requirements.txt`
-4. 确认设备：`python -c "import torch, torch_npu; print(torch.npu.is_available(), torch.npu.get_device_name(0))"`
+4. 确认设备：`python -c "import torch; print(torch.__version__)"; python -c "import importlib.metadata as m; print(m.version('torch-npu'))"; python -c "import torch, torch_npu; print(torch.npu.is_available(), torch.npu.get_device_name(0))"`
 
 910B3 启动示例（口型在 NPU 上推理；TTS 走已有 Qwen3 Omni 服务，勿把 CosyVoice / GPT-SoVITS 迁进本进程）：
 
@@ -93,7 +95,7 @@ python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 
   --tts omnitts --TTS_SERVER http://<qwen-host>:<port> --REF_FILE <voice>
 ```
 
-未 source CANN 时，`import torch` 会因缺少 `libhccl.so` 直接退出。本仓库会关闭 PyTorch 的 NPU 自动加载并回退到 CPU/CUDA，同时给出上述提示。要真正用 910B3，必须先 source。
+未 source CANN 时，`import torch` 会因缺少 `libhccl.so` 直接退出。若出现 `Duplicated key 'pinned_reserve_segment_size_mb'` 并 core dump，说明 `torch` 与 `torch-npu` 版本不匹配（C++ abort，Python 捕获不到）。本仓库会先核对版本并在子进程里探测导入，失败则回退到 CPU/CUDA。要真正用 910B3，必须先 source，且两套包主次版本一致。
 
 可用环境变量 `ASCEND_DEVICE_ID` 指定卡号（默认 0）。日志中应出现 `Using npu:0 for inference.`，且 `inferfps` / `finalfps` 均需 ≥ 25 才算实时。
 
