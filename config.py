@@ -80,9 +80,11 @@ def parse_args():
 
     # ─── LLM ──────────────────────────────────────────────────────────
     parser.add_argument('--llm_provider', type=str, default='dashscope',
-                        help="llm provider: dashscope/orcarouter")
+                        help="llm provider: dashscope/orcarouter/openai (vllm/custom/local aliases)")
     parser.add_argument('--llm_model', type=str, default='',
-                        help="llm model override, empty = provider default (qwen-plus / orcarouter/auto)")
+                        help="llm model override, empty = provider default (qwen-plus / orcarouter/auto); required for openai/vLLM")
+    parser.add_argument('--llm_base_url', type=str, default='',
+                        help="OpenAI-compatible chat base URL for --llm_provider openai (e.g. http://127.0.0.1:8000/v1). Also OPENAI_BASE_URL.")
 
     # ─── 传输 ─────────────────────────────────────────────────────────
     parser.add_argument('--transport', type=str, default='webrtc',

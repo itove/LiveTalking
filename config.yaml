@@ -24,8 +24,9 @@ TTS_SERVER: ''                 # TTS server URL, no trailing slash
                                # Ascend 910B3: tts=omnitts, TTS_SERVER=http://<qwen-host>:<port> (do not commit a private URL)
 
 # -------- LLM ----------------------------------------------------------
-llm_provider: dashscope        # dashscope / orcarouter
-llm_model: ''                  # model override, empty = provider default (qwen-plus / orcarouter/auto)
+llm_provider: dashscope        # dashscope / orcarouter / openai (aliases: vllm, custom, local)
+llm_model: ''                  # model override; required for openai/vLLM (GET /v1/models id)
+llm_base_url: ''               # openai provider only, e.g. http://<qwen-host>:<port>/v1 (not TTS_SERVER)
 
 # -------- Transport ----------------------------------------------------------
 transport: webrtc              # rtcpush / webrtc / rtmp / virtualcam
