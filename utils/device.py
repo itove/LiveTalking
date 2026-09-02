@@ -160,6 +160,16 @@ def _preload_ascend_hal():
     return loaded
 
 
+def _quiet_torch_npu_owner_warnings():
+    """CANN is installed as root; torch_npu warns when the process user differs."""
+    warnings.filterwarnings(
+        "ignore",
+        message=r".*owner does not match the current owner.*",
+        category=UserWarning,
+        module=r"torch_npu\.utils\.collect_env",
+    )
+
+
 def _try_import_torch_npu():
     """Import torch_npu once so the npu backend registers with PyTorch."""
     global _torch_npu_imported, _torch_npu_failed
@@ -183,6 +193,7 @@ def _try_import_torch_npu():
         )
         return False
     try:
+        _quiet_torch_npu_owner_warnings()
         _preload_ascend_hal()
         import torch_npu  # noqa: F401
         _torch_npu_imported = True
