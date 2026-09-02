@@ -229,11 +229,25 @@ def main():
     # server.serve_forever()
 
 
+def _load_project_dotenv():
+    """Load `.env` next to app.py only.
+
+    Bare ``load_dotenv()`` calls ``find_dotenv()``, which walks parent
+    directories and will pick up ``~/.env`` when the repo has no ``.env``.
+    Home-directory env files are often shell scripts, not KEY=value dotenv.
+    """
+    root = os.path.dirname(os.path.abspath(__file__))
+    for name in (".env", ".env.local"):
+        path = os.path.join(root, name)
+        if os.path.isfile(path):
+            load_dotenv(path, override=(name == ".env.local"))
+
+
 # os.environ['MKL_SERVICE_FORCE_INTEL'] = '1'
 # os.environ['MULTIPROCESSING_METHOD'] = 'forkserver'                                                    
 if __name__ == '__main__':
     mp.set_start_method('spawn')
-    load_dotenv()  # Load environment variables from .env file, if it exists
+    _load_project_dotenv()
     main()
     
     
