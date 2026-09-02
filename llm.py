@@ -141,6 +141,35 @@ def _llm_model(opt) -> str:
     return model
 
 
+# Flush TTS at sentence end. Commas only flush once the clause is already
+# long enough that Edge's ~7s round-trip can hide behind playback.
+_SENTENCE_END = frozenset("。！？.!?")
+_CLAUSE_PAUSE = frozenset("，,、；;：:")
+_MIN_SENTENCE_CHARS = 10
+_MIN_CLAUSE_CHARS = 40
+
+
+def take_spoken_segments(buffer: str, incoming: str) -> tuple[list[str], str]:
+    """Split streamed LLM text into speakable chunks.
+
+    Tiny comma-separated clauses each paid a full TTS round-trip and left
+    the avatar silent while the next clip was fetched.
+    """
+    flushed: list[str] = []
+    lastpos = 0
+    result = buffer
+    for i, char in enumerate(incoming):
+        if char in _SENTENCE_END or char in _CLAUSE_PAUSE:
+            result = result + incoming[lastpos:i + 1]
+            lastpos = i + 1
+            min_chars = _MIN_SENTENCE_CHARS if char in _SENTENCE_END else _MIN_CLAUSE_CHARS
+            if len(result) > min_chars:
+                flushed.append(result)
+                result = ""
+    result = result + incoming[lastpos:]
+    return flushed, result
+
+
 def llm_response(message, avatar_session: "BaseAvatar", datainfo: dict = {}):
     try:
         opt = avatar_session.opt
@@ -179,17 +208,10 @@ def llm_response(message, avatar_session: "BaseAvatar", datainfo: dict = {}):
                 msg = chunk.choices[0].delta.content
                 if msg is None:
                     continue
-                lastpos = 0
-                #msglist = re.split('[,.!;:，。！?]',msg)
-                for i, char in enumerate(msg):
-                    if char in ",.!;:，。！？：；":
-                        result = result + msg[lastpos:i+1]
-                        lastpos = i + 1
-                        if len(result) > 10:
-                            logger.info(result)
-                            avatar_session.put_msg_txt(result, datainfo)
-                            result = ""
-                result = result + msg[lastpos:]
+                pieces, result = take_spoken_segments(result, msg)
+                for piece in pieces:
+                    logger.info(piece)
+                    avatar_session.put_msg_txt(piece, datainfo)
         end = time.perf_counter()
         logger.info(f"llm Time to last chunk: {end-start}s")
         if result:

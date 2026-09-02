@@ -98,6 +98,26 @@ class LlmClientTests(unittest.TestCase):
     def test_dashscope_does_not_send_qwen_template_kwargs(self):
         self.assertIsNone(llm._chat_extra_body(_opt()))
 
+    def test_comma_does_not_flush_short_clause(self):
+        pieces, rest = llm.take_spoken_segments(
+            "", "部分厂商为了强调国产第一的概念，"
+        )
+        self.assertEqual(pieces, [])
+        self.assertIn("，", rest)
+
+    def test_period_flushes_sentence(self):
+        text = "部分厂商为了强调国产第一的概念。"
+        pieces, rest = llm.take_spoken_segments("", text)
+        self.assertEqual(pieces, [text])
+        self.assertEqual(rest, "")
+
+    def test_long_comma_clause_does_flush(self):
+        text = "一二三四五六七八九十" * 5 + "，"
+        self.assertGreater(len(text), llm._MIN_CLAUSE_CHARS)
+        pieces, rest = llm.take_spoken_segments("", text)
+        self.assertEqual(pieces, [text])
+        self.assertEqual(rest, "")
+
 
 if __name__ == "__main__":
     unittest.main()
