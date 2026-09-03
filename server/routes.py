@@ -254,15 +254,28 @@ def setup_routes(app):
     app.router.add_get("/api/admin/sessions", admin_sessions)
     app.router.add_get('/sse', sse_handler)
 
-    # ── Local ASR endpoint (SenseVoice/FunASR) ── Issue #604 ──
+    # ── ASR: Qwen3 transcriptions (preferred) or local SenseVoice ──
     try:
-        from server.asr_server import asr_websocket_handler, is_funasr_available
-        if is_funasr_available():
+        from server.asr_server import (
+            asr_websocket_handler,
+            is_funasr_available,
+            is_qwen_asr_configured,
+        )
+        opt = app.get("opt")
+        if is_qwen_asr_configured(opt):
+            app.router.add_get("/api/asr", asr_websocket_handler)
+            logger.info(
+                "[ASR] Qwen transcriptions enabled at /api/asr -> %s",
+                getattr(opt, "ASR_SERVER", ""),
+            )
+        elif is_funasr_available():
             app.router.add_get("/api/asr", asr_websocket_handler)
             logger.info("[ASR] Local SenseVoice ASR endpoint enabled at /api/asr")
         else:
-            logger.info("[ASR] funasr not installed — local ASR endpoint disabled "
-                        "(pip install funasr modelscope)")
+            logger.info(
+                "[ASR] no ASR_SERVER and funasr not installed — "
+                "voice input disabled (set --ASR_SERVER or pip install funasr modelscope)"
+            )
     except Exception as e:
         logger.warning(f"[ASR] Failed to register ASR endpoint: {e}")
 

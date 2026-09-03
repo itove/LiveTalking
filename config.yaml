@@ -23,6 +23,11 @@ REF_TEXT: ''                   # reference text for voice cloning (English or Ch
 TTS_SERVER: ''                 # TTS server URL, no trailing slash
                                # Ascend 910B3: tts=omnitts, TTS_SERVER=http://<qwen-host>:<port> (do not commit a private URL)
 
+# -------- ASR (Qwen3 transcriptions) -----------------------------------
+ASR_SERVER: ''                 # Qwen3-ASR base URL, no trailing slash (not TTS_SERVER, not chat :4000 unless that process serves transcriptions)
+asr_model: ''                  # served id from GET /v1/models on ASR_SERVER
+asr_language: ''               # optional ISO language hint; empty = auto
+
 # -------- LLM ----------------------------------------------------------
 llm_provider: dashscope        # dashscope / orcarouter / openai (aliases: vllm, custom, local)
 llm_model: ''                  # model override; required for openai/vLLM (GET /v1/models id)

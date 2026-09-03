@@ -78,6 +78,14 @@ def parse_args():
     parser.add_argument('--REF_TEXT', type=str, default=None)
     parser.add_argument('--TTS_SERVER', type=str, default='http://127.0.0.1:9880')
 
+    # ─── ASR (Qwen3 transcriptions; not TTS_SERVER / not chat unless that process serves /v1/audio/transcriptions) ──
+    parser.add_argument('--ASR_SERVER', type=str, default='',
+                        help="Qwen3-ASR base URL, no trailing slash (POST {ASR_SERVER}/v1/audio/transcriptions). Empty = local SenseVoice if funasr is installed.")
+    parser.add_argument('--asr_model', type=str, default='',
+                        help="served ASR model id from GET /v1/models on ASR_SERVER")
+    parser.add_argument('--asr_language', type=str, default='',
+                        help="optional ISO language hint for transcriptions (empty = auto)")
+
     # ─── LLM ──────────────────────────────────────────────────────────
     parser.add_argument('--llm_provider', type=str, default='dashscope',
                         help="llm provider: dashscope/orcarouter/openai (vllm/custom/local aliases)")

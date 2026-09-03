@@ -102,7 +102,8 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 \
   --tts omnitts --TTS_SERVER http://<qwen-tts-host>:<port> --REF_FILE <voice> \
   --llm_provider openai --llm_base_url http://<qwen-chat-host>:<port>/v1 \
-  --llm_model <served-model-name>
+  --llm_model <served-model-name> \
+  --ASR_SERVER http://<qwen-asr-host>:<port> --asr_model <served-asr-name>
 ```
 
 If CANN is not sourced, `import torch` used to abort on missing `libhccl.so`. If you see `Duplicated key 'pinned_reserve_segment_size_mb'` and a core dump, torch and torch-npu do not match (C++ `abort()`, not a Python exception). This repo checks versions and probes the import in a child process, then falls back to CPU/CUDA. For 910B3 inference you still must source CANN and install a matching pair.
@@ -175,6 +176,7 @@ python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1
 
 **Logic Layer**
 - **LLM Engine**: Integrates with models like Qwen. Cloud: `--llm_provider dashscope` / `orcarouter`. Local vLLM: `--llm_provider openai --llm_base_url http://<host>:<port>/v1 --llm_model <served-name>`
+- **ASR Engine**: Browser mic uses the FunASR WebSocket; with `--ASR_SERVER` it posts to Qwen3 `POST /v1/audio/transcriptions` (do not load SenseVoice on this NPU)
 - **TTS Engine**: Modular design supporting EdgeTTS, GPT-SoVITS, CosyVoice, Tencent Cloud, and more
 - **Feature Extraction**: Synchronously extracts acoustic features (e.g., Mel spectrograms) for lip-sync inference
 

@@ -1,12 +1,14 @@
 ###############################################################################
-#  ASR WebSocket Server — Local SenseVoice/FunASR Integration
+#  ASR WebSocket Server — FunASR client protocol
 #
 #  Resolves: https://github.com/lipku/LiveTalking/issues/604
 #
-#  This module provides a WebSocket endpoint (/api/asr) that speaks the same
-#  protocol as the external FunASR server (wss://www.funasr.com:10096/).
-#  The browser client (web/asr/main.js) can connect here instead, keeping
-#  all ASR processing local and cutting ~600ms of network + Whisper latency.
+#  WebSocket /api/asr speaks the same protocol as FunASR
+#  (wss://www.funasr.com:10096/). The browser (web/asr/main.js) is unchanged.
+#
+#  Transcription backend:
+#    --ASR_SERVER  →  Qwen3-ASR POST /v1/audio/transcriptions (preferred)
+#    otherwise     →  local SenseVoice if funasr is installed
 #
 #  Copyright (C) 2024 LiveTalking@lipku https://github.com/lipku/LiveTalking
 #  Licensed under the Apache License, Version 2.0
@@ -116,9 +118,57 @@ def _run_inference(audio_float32: np.ndarray, sample_rate: int, use_itn: bool):
     return text, inference_ms, audio_duration_s
 
 
-# ─── WebSocket Handler ─────────────────────────────────────────────────────
-
 SAMPLE_RATE = 16000  # The browser client records at 16 kHz mono PCM16
+
+
+def is_qwen_asr_configured(opt) -> bool:
+    if opt is None:
+        return False
+    return bool((getattr(opt, "ASR_SERVER", "") or "").strip())
+
+
+def funasr_result_payload(text: str, client_mode: str = "2pass") -> dict:
+    """JSON the FunASR web client expects after a full utterance."""
+    if client_mode == "2pass":
+        response_mode = "2pass-offline"
+    else:
+        response_mode = client_mode or "offline"
+    return {
+        "text": text,
+        "mode": response_mode,
+        "is_final": True,
+        "timestamp": None,
+    }
+
+
+def _run_qwen_inference(pcm: bytes, sample_rate: int, opt):
+    from server.qwen_asr import transcribe_pcm16
+
+    t0 = time.perf_counter()
+    text = transcribe_pcm16(
+        pcm,
+        getattr(opt, "ASR_SERVER", ""),
+        model=getattr(opt, "asr_model", "") or "",
+        language=getattr(opt, "asr_language", "") or "",
+    )
+    inference_ms = (time.perf_counter() - t0) * 1000
+    audio_duration_s = len(pcm) / (sample_rate * 2)
+    logger.info(
+        f"[ASR] Qwen inference complete latency={inference_ms:.0f}ms "
+        f"audio={audio_duration_s:.1f}s text={text[:100]!r}"
+    )
+    return text, inference_ms, audio_duration_s
+
+
+def _transcribe_buffer(pcm: bytes, sample_rate: int, opt, use_itn: bool):
+    """Blocking transcription. Qwen remote ASR if configured, else local SenseVoice."""
+    if is_qwen_asr_configured(opt):
+        return _run_qwen_inference(pcm, sample_rate, opt)
+    audio_float32 = np.frombuffer(pcm, dtype=np.int16).astype(np.float32) / 32768.0
+    return _run_inference(audio_float32, sample_rate, use_itn)
+
+
+# ─── WebSocket Handler ─────────────────────────────────────────────────────
 
 
 async def asr_websocket_handler(request):
@@ -206,39 +256,27 @@ async def asr_websocket_handler(request):
                         audio_buffer = audio_buffer[:-1]
                         buf_bytes -= 1
 
-                    # Convert PCM16 → float32 in [-1, 1]
-                    audio_int16 = np.frombuffer(bytes(audio_buffer), dtype=np.int16)
-                    audio_float32 = audio_int16.astype(np.float32) / 32768.0
+                    pcm = bytes(audio_buffer)
                     use_itn = config.get("itn", False)
+                    opt = request.app.get("opt") if request.app else None
 
-                    # Offload blocking inference to a thread
                     loop = asyncio.get_event_loop()
                     try:
                         text, inference_ms, audio_dur = await loop.run_in_executor(
                             None,
-                            _run_inference,
-                            audio_float32,
+                            _transcribe_buffer,
+                            pcm,
                             SAMPLE_RATE,
+                            opt,
                             use_itn,
                         )
                     except Exception as e:
                         logger.exception(f"[ASR] ❌ Inference failed: {e}")
                         text = ""
 
-                    # Map the client mode to the response mode the frontend expects
-                    mode = config.get("mode", "offline")
-                    if mode == "2pass":
-                        response_mode = "2pass-offline"
-                    else:
-                        response_mode = mode  # "online" or "offline"
-
-                    await ws.send_str(json.dumps({
-                        "text": text,
-                        "mode": response_mode,
-                        "is_final": True,
-                        "timestamp": None,
-                    }))
-                    logger.info(f"[ASR] 📤 Result sent to client (mode={response_mode})")
+                    payload = funasr_result_payload(text, config.get("mode", "offline"))
+                    await ws.send_str(json.dumps(payload))
+                    logger.info(f"[ASR] 📤 Result sent to client (mode={payload['mode']})")
 
             elif msg.type == web.WSMsgType.BINARY:
                 audio_buffer.extend(msg.data)

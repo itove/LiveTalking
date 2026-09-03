@@ -72,7 +72,7 @@
         label { font-weight: 500; font-size: 0.9rem; color: #64748b; margin-bottom: 4px; }
         .param-hint { font-size: 0.75rem; color: #94a3b8; }
         ::placeholder { color: #9ca3af !important; opacity: 1; }
-        :-ms-input-placeholder { color: #9ca3af; }
+        .asr-frame { width: 100%; height: 480px; border: 0; border-radius: 8px; background: #fff; }
     </style>
 </head>
 <body>
@@ -114,6 +114,15 @@
                     <i class="bi bi-soundwave fs-2" style="color: #4361ee;"></i>
                     <div class="fw-bold mt-2">TTS Voice Manager</div>
                     <div class="small text-muted">Voices · Clone · Synthesize</div>
+                </div>
+            </a>
+        </div>
+        <div class="col-md-3">
+            <a href="/webrtcapi-asr.html" class="quick-link" target="_blank">
+                <div class="glass-card p-3 text-center">
+                    <i class="bi bi-mic-fill fs-2" style="color: #4361ee;"></i>
+                    <div class="fw-bold mt-2">Voice Input</div>
+                    <div class="small text-muted">Mic → ASR → chat</div>
                 </div>
             </a>
         </div>
@@ -178,6 +187,20 @@
                 </div>
             </div>
 
+            <!-- Voice input (FunASR WS → Qwen transcriptions → POST /human chat) -->
+            <div class="glass-card">
+                <div class="card-header"><i class="bi bi-mic"></i> Voice Input</div>
+                <div class="card-body">
+                    <p class="small text-muted mb-2">Connect WebRTC first, then grant the microphone. After you stop, the transcript is sent as Chat LLM.</p>
+                    <iframe class="asr-frame" src="/asr/index.html" title="Voice input" allow="microphone"></iframe>
+                    <div class="mt-2 small">
+                        <a href="/asr/index.html" target="_blank">Full ASR page</a>
+                        ·
+                        <a href="/webrtcapi-asr.html" target="_blank">WebRTC + ASR</a>
+                    </div>
+                </div>
+            </div>
+
             <!-- 3. Audio Driver -->
             <div class="glass-card">
                 <div class="card-header"><i class="bi bi-mic-fill"></i> Audio Driver (POST /humanaudio)</div>
@@ -218,6 +241,8 @@
     </div>
 </div>
 
+<input type="hidden" id="sessionid" value="">
+
 <script>
 let pc = null;
 let sessionid = null;
@@ -235,6 +260,8 @@ function updateStatus(connected) {
 
 function setSessionId(sid) {
     sessionid = sid;
+    const hidden = document.getElementById('sessionid');
+    if (hidden) hidden.value = sid || '';
     document.getElementById('sessionIdDisplay').textContent = 'SID: ' + (sid || '-');
 }
 

@@ -106,7 +106,8 @@ source /usr/local/Ascend/ascend-toolkit/set_env.sh
 python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 \
   --tts omnitts --TTS_SERVER http://<qwen-tts-host>:<port> --REF_FILE <voice> \
   --llm_provider openai --llm_base_url http://<qwen-chat-host>:<port>/v1 \
-  --llm_model <served-model-name>
+  --llm_model <served-model-name> \
+  --ASR_SERVER http://<qwen-asr-host>:<port> --asr_model <served-asr-name>
 ```
 
 未 source CANN 时，`import torch` 会因缺少 `libhccl.so` 直接退出。若出现 `Duplicated key 'pinned_reserve_segment_size_mb'` 并 core dump，说明 `torch` 与 `torch-npu` 版本不匹配（C++ abort，Python 捕获不到）。本仓库会先核对版本并在子进程里探测导入，失败则回退到 CPU/CUDA。要真正用 910B3，必须先 source，且两套包主次版本一致。
@@ -183,6 +184,7 @@ python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1
 
 **逻辑层**
 - **LLM 引擎**: 对接 Qwen 等大模型生成对话回复。云端用 `--llm_provider dashscope` / `orcarouter`；本地 vLLM 用 `--llm_provider openai --llm_base_url http://<host>:<port>/v1 --llm_model <served-name>`
+- **ASR 引擎**: 浏览器麦克风走 FunASR WebSocket；`--ASR_SERVER` 时转发到 Qwen3 `POST /v1/audio/transcriptions`（勿在本机 NPU 上加载 SenseVoice）
 - **TTS 引擎**: 模块化设计，支持 EdgeTTS、GPT-SoVITS、CosyVoice、腾讯云等多种方案
 - **特征提取**: 同步提取音频的声学特征（如 Mel 频谱），用于口型推理
 
