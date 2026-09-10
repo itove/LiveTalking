@@ -106,6 +106,8 @@ python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 
   --ASR_SERVER http://<qwen-asr-host>:<port> --asr_model <served-asr-name>
 ```
 
+End-user talk page: `http://<host>:<listenport>/talk.html` (full-window video, hold-to-talk). Operator console remains `/` / `index.html`.
+
 If CANN is not sourced, `import torch` used to abort on missing `libhccl.so`. If you see `Duplicated key 'pinned_reserve_segment_size_mb'` and a core dump, torch and torch-npu do not match (C++ `abort()`, not a Python exception). This repo checks versions and probes the import in a child process, then falls back to CPU/CUDA. For 910B3 inference you still must source CANN and install a matching pair.
 
 Set `ASCEND_DEVICE_ID` to pick a card (default 0). Logs should show `Using npu:0 for inference.`, and both `inferfps` and `finalfps` must be ≥ 25 for real-time playback.

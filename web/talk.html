@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>LiveTalking — Talk</title>
+    <style>
+        :root {
+            --fg: #f1f5f9;
+            --muted: #94a3b8;
+            --accent: #38bdf8;
+            --danger: #f87171;
+            --overlay: rgba(15, 23, 42, 0.55);
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        html, body {
+            height: 100%;
+            overflow: hidden;
+            background: #0b1220;
+            color: var(--fg);
+            font-family: "Segoe UI", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+        }
+        .stage {
+            position: fixed;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: #000;
+        }
+        #video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #000;
+        }
+        #audio { display: none; }
+        .hud {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            padding: 16px 20px calc(20px + env(safe-area-inset-bottom));
+            background: linear-gradient(transparent, var(--overlay) 40%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 12px;
+            pointer-events: none;
+        }
+        .hud > * { pointer-events: auto; }
+        .status {
+            font-size: 0.85rem;
+            color: var(--muted);
+            letter-spacing: 0.02em;
+            text-align: center;
+            min-height: 1.2em;
+        }
+        .status.error { color: var(--danger); }
+        .transcript {
+            max-width: min(720px, 92vw);
+            font-size: 1rem;
+            line-height: 1.45;
+            text-align: center;
+            color: var(--fg);
+            text-shadow: 0 1px 8px rgba(0,0,0,0.6);
+            min-height: 1.45em;
+        }
+        .mic {
+            width: 72px;
+            height: 72px;
+            border-radius: 50%;
+            border: 2px solid rgba(255,255,255,0.35);
+            background: rgba(15, 23, 42, 0.75);
+            color: var(--fg);
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: transform 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
+            -webkit-tap-highlight-color: transparent;
+            user-select: none;
+            touch-action: none;
+        }
+        .mic svg { width: 30px; height: 30px; fill: currentColor; }
+        .mic:hover:not(:disabled) { transform: scale(1.04); border-color: var(--accent); }
+        .mic:disabled { opacity: 0.45; cursor: not-allowed; }
+        .mic.listening {
+            background: #0ea5e9;
+            border-color: #7dd3fc;
+            box-shadow: 0 0 0 6px rgba(14, 165, 233, 0.25);
+            color: #0b1220;
+        }
+        .mic.busy { border-color: #fbbf24; }
+        .hint {
+            font-size: 0.75rem;
+            color: var(--muted);
+        }
+        .topbar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            padding: 12px 16px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: linear-gradient(var(--overlay), transparent);
+            pointer-events: none;
+        }
+        .topbar a {
+            pointer-events: auto;
+            color: var(--muted);
+            text-decoration: none;
+            font-size: 0.8rem;
+        }
+        .topbar a:hover { color: var(--fg); }
+        .dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+            margin-right: 6px;
+            background: #ef4444;
+        }
+        .dot.on { background: #22c55e; }
+        input[type="hidden"] { display: none; }
+    </style>
+</head>
+<body>
+    <div class="topbar">
+        <span id="connLabel"><span class="dot" id="connDot"></span><span id="connText">Connecting…</span></span>
+        <a href="/index.html">Operator</a>
+    </div>
+
+    <div class="stage">
+        <video id="video" autoplay playsinline muted></video>
+        <audio id="audio" autoplay></audio>
+    </div>
+
+    <div class="hud">
+        <div class="transcript" id="transcript"></div>
+        <div class="status" id="status">Connecting to avatar…</div>
+        <button type="button" class="mic" id="micBtn" disabled aria-label="Hold to talk"
+                title="Hold to talk">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
+            </svg>
+        </button>
+        <div class="hint" id="hint">Hold to talk · release to send</div>
+    </div>
+
+    <input type="hidden" id="sessionid" value="">
+
+    <script src="/asr/recorder-core.js"></script>
+    <script src="/asr/pcm.js"></script>
+    <script src="/talk.js"></script>
+</body>
+</html>
