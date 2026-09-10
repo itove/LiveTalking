@@ -110,7 +110,7 @@ python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 
   --ASR_SERVER http://<qwen-asr-host>:<port> --asr_model <served-asr-name>
 ```
 
-端用户对话页：`http://<host>:<listenport>/talk.html`（全屏视频，按住麦克风说话）。运营商控制台仍是 `/` / `index.html`。
+端用户对话页：`http://<host>:<listenport>/talk.html`（全屏视频，免按键说话；麦克风按钮可静音）。运营商控制台仍是 `/` / `index.html`。
 
 未 source CANN 时，`import torch` 会因缺少 `libhccl.so` 直接退出。若出现 `Duplicated key 'pinned_reserve_segment_size_mb'` 并 core dump，说明 `torch` 与 `torch-npu` 版本不匹配（C++ abort，Python 捕获不到）。本仓库会先核对版本并在子进程里探测导入，失败则回退到 CPU/CUDA。要真正用 910B3，必须先 source，且两套包主次版本一致。
 

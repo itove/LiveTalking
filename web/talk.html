@@ -80,7 +80,7 @@
             transition: transform 0.15s, background 0.15s, border-color 0.15s, box-shadow 0.15s;
             -webkit-tap-highlight-color: transparent;
             user-select: none;
-            touch-action: none;
+            touch-action: manipulation;
         }
         .mic svg { width: 30px; height: 30px; fill: currentColor; }
         .mic:hover:not(:disabled) { transform: scale(1.04); border-color: var(--accent); }
@@ -92,6 +92,12 @@
             color: #0b1220;
         }
         .mic.busy { border-color: #fbbf24; }
+        .mic.muted {
+            background: rgba(127, 29, 29, 0.55);
+            border-color: #f87171;
+            color: #fecaca;
+            box-shadow: none;
+        }
         .hint {
             font-size: 0.75rem;
             color: var(--muted);
@@ -141,13 +147,16 @@
     <div class="hud">
         <div class="transcript" id="transcript"></div>
         <div class="status" id="status">Connecting to avatar…</div>
-        <button type="button" class="mic" id="micBtn" disabled aria-label="Hold to talk"
-                title="Hold to talk">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
+        <button type="button" class="mic" id="micBtn" disabled aria-label="Mute microphone"
+                title="Mute">
+            <svg id="iconMic" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3zm5-3a5 5 0 0 1-10 0H5a7 7 0 0 0 6 6.92V21h2v-3.08A7 7 0 0 0 19 11h-2z"/>
             </svg>
+            <svg id="iconMute" viewBox="0 0 24 24" aria-hidden="true" hidden>
+                <path d="M19 11h-1.7c0 .58-.1 1.13-.27 1.64l1.27 1.27c.44-.9.7-1.9.7-2.91zm-6.05.95c.04-.15.05-.3.05-.45V6a3 3 0 0 0-5.76-.95l5.71 5.9zM4.27 3 3 4.27l6.01 6.01V11a3 3 0 0 0 3.94 2.83l1.91 1.91A6.95 6.95 0 0 1 5 11H3.3c0 3.41 2.72 6.23 6 6.72V21h2v-3.28c.91-.13 1.77-.45 2.54-.9L19.73 21 21 19.73 4.27 3z"/>
+            </svg>
         </button>
-        <div class="hint" id="hint">Hold to talk · release to send</div>
+        <div class="hint" id="hint">Hands-free after connect · tap mic to mute</div>
     </div>
 
     <input type="hidden" id="sessionid" value="">
