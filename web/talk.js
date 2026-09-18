@@ -36,6 +36,7 @@
     let phase = "connecting";
     let muted = false;
     let micRunning = false;
+    let micStarting = false;
     let streamToAsr = false;
     let speechOpenPending = false;
 
@@ -65,7 +66,7 @@
         els.micBtn.classList.toggle("listening", hearing && !muted);
         els.micBtn.classList.toggle("busy", busy);
         els.micBtn.classList.toggle("muted", muted);
-        els.micBtn.disabled = phase === "connecting" || !els.sessionid.value;
+        els.micBtn.disabled = !els.sessionid.value;
         if (els.iconMic) els.iconMic.hidden = muted;
         if (els.iconMute) els.iconMute.hidden = !muted;
         els.micBtn.setAttribute("aria-label", muted ? "Unmute microphone" : "Mute microphone");
@@ -318,8 +319,9 @@
     }
 
     async function startMicMonitor() {
-        if (muted || !els.sessionid.value) return;
-        if (phase === "thinking" || phase === "speaking" || phase === "connecting") return;
+        if (muted || !els.sessionid.value || micRunning || micStarting) return;
+        if (phase === "thinking" || phase === "speaking" || phase === "inSpeech") return;
+        micStarting = true;
         try {
             await ensureRecorder();
             loudMs = 0;
@@ -333,9 +335,20 @@
         } catch (e) {
             console.error(e);
             micRunning = false;
-            setStatus(e.message || String(e), true);
+            rec = null;
             setPhase("idle");
+            setStatus("Tap the mic to allow the microphone", true);
+            els.hint.textContent = e.message || String(e);
+            els.micBtn.disabled = false;
+        } finally {
+            micStarting = false;
         }
+    }
+
+    function onAvatarReady() {
+        if (!els.sessionid.value) return;
+        updateMicChrome();
+        if (!muted) startMicMonitor();
     }
 
     async function waitSpeakingEnd() {
@@ -409,8 +422,16 @@
     }
 
     els.micBtn.addEventListener("click", () => {
-        if (els.micBtn.disabled) return;
-        setMuted(!muted);
+        if (!els.sessionid.value) return;
+        if (muted) {
+            setMuted(false);
+            return;
+        }
+        if (!micRunning && phase !== "inSpeech" && phase !== "thinking" && phase !== "speaking") {
+            startMicMonitor();
+            return;
+        }
+        setMuted(true);
     });
 
     // ── WebRTC ────────────────────────────────────────────────────
@@ -460,7 +481,9 @@
                 }
                 return pc.setRemoteDescription(
                     new RTCSessionDescription({ type: "answer", sdp: answer.sdp })
-                );
+                ).then(() => {
+                    onAvatarReady();
+                });
             });
     }
 
@@ -475,6 +498,7 @@
         pc.addEventListener("track", (evt) => {
             if (evt.track.kind === "video") {
                 els.video.srcObject = evt.streams[0];
+                onAvatarReady();
             } else {
                 els.audio.srcObject = evt.streams[0];
             }
@@ -484,12 +508,10 @@
             if (st === "connected") {
                 setConn(true, "Connected");
                 updateMicChrome();
-                if (!muted) startMicMonitor();
             } else if (st === "failed" || st === "disconnected" || st === "closed") {
                 setConn(false, st === "failed" ? "Failed" : "Disconnected");
                 stopMicMonitor();
                 closeWs();
-                els.micBtn.disabled = true;
             }
         });
         negotiate().catch((e) => {
