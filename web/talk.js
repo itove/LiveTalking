@@ -6,10 +6,10 @@
 
     // Energy VAD defaults (close-talk Chromium); tune in one place
     const VAD = {
-        startLevel: 15,
-        endLevel: 12,
-        startMs: 200,
-        endMs: 900,
+        startLevel: 8,
+        endLevel: 6,
+        startMs: 150,
+        endMs: 800,
         minSpeechMs: 400,
         maxSpeechMs: 15000,
     };
@@ -22,6 +22,7 @@
         transcript: document.getElementById("transcript"),
         micBtn: document.getElementById("micBtn"),
         hint: document.getElementById("hint"),
+        level: document.getElementById("level"),
         connDot: document.getElementById("connDot"),
         connText: document.getElementById("connText"),
         iconMic: document.getElementById("iconMic"),
@@ -39,11 +40,13 @@
     let micStarting = false;
     let streamToAsr = false;
     let speechOpenPending = false;
+    let awaitingAsrResult = false;
 
     let loudMs = 0;
     let quietMs = 0;
     let speechStartedAt = 0;
     let lastProcessAt = 0;
+    let lastLevelUiAt = 0;
 
     function asrUrl() {
         const proto = window.location.protocol === "https:" ? "wss://" : "ws://";
@@ -53,6 +56,15 @@
     function setStatus(text, isError) {
         els.status.textContent = text || "";
         els.status.classList.toggle("error", !!isError);
+    }
+
+    function setLevel(powerLevel) {
+        if (!els.level) return;
+        const now = Date.now();
+        if (now - lastLevelUiAt < 100) return;
+        lastLevelUiAt = now;
+        const n = Math.max(0, Math.min(100, Math.round(powerLevel || 0)));
+        els.level.textContent = "lvl " + n + " (start≥" + VAD.startLevel + ")";
     }
 
     function setConn(ok, label) {
@@ -67,7 +79,6 @@
         els.micBtn.classList.toggle("busy", busy);
         els.micBtn.classList.toggle("muted", muted);
         els.micBtn.disabled = !els.sessionid.value;
-        // SVG ignores the HTML hidden attribute in many browsers — use a CSS class.
         if (els.iconMic) els.iconMic.classList.toggle("is-hidden", muted);
         if (els.iconMute) els.iconMute.classList.toggle("is-hidden", !muted);
         els.micBtn.setAttribute("aria-label", muted ? "Unmute microphone" : "Mute microphone");
@@ -80,6 +91,7 @@
         if (muted && next !== "connecting") {
             setStatus("Muted");
             els.hint.textContent = "Tap to unmute and keep talking hands-free";
+            if (els.level) els.level.textContent = "";
             return;
         }
         if (next === "listening") {
@@ -94,6 +106,7 @@
         } else if (next === "speaking") {
             setStatus("Avatar speaking…");
             els.hint.textContent = "Mic pauses until the avatar finishes";
+            if (els.level) els.level.textContent = "";
         } else if (next === "connecting") {
             setStatus("Connecting to avatar…");
             els.hint.textContent = "Hands-free after connect";
@@ -131,25 +144,52 @@
         }
         streamToAsr = false;
         speechOpenPending = false;
+        awaitingAsrResult = false;
     }
 
-    function flushPcm() {
+    function appendPcm16(buffer, bufferSampleRate) {
+        const data_48k = buffer[buffer.length - 1];
+        if (!data_48k || !data_48k.length) return;
+        const data_16k = Recorder.SampleData([data_48k], bufferSampleRate, 16000).data;
+        sampleBuf = Int16Array.from([...sampleBuf, ...data_16k]);
+    }
+
+    function flushPcmChunks() {
         if (!ws || ws.readyState !== 1 || sampleBuf.length === 0) return;
-        ws.send(sampleBuf);
-        sampleBuf = new Int16Array();
+        const chunkSize = 960;
+        while (sampleBuf.length >= chunkSize) {
+            const sendBuf = sampleBuf.slice(0, chunkSize);
+            sampleBuf = sampleBuf.slice(chunkSize);
+            ws.send(sendBuf);
+        }
+        if (sampleBuf.length > 0) {
+            ws.send(sampleBuf);
+            sampleBuf = new Int16Array();
+        }
     }
 
     function openAsrSession() {
         return new Promise((resolve, reject) => {
-            closeWs();
-            sampleBuf = new Int16Array();
-            const socket = new WebSocket(asrUrl());
+            // Keep sampleBuf — do not clear buffered speech collected during connect.
+            if (ws) {
+                try { ws.close(); } catch (_) {}
+                ws = null;
+            }
+            streamToAsr = false;
+            awaitingAsrResult = false;
+
+            const url = asrUrl();
+            console.log("[talk] ASR connecting", url, "bufferedSamples=", sampleBuf.length);
+            setStatus("ASR connecting…");
+            const socket = new WebSocket(url);
             ws = socket;
             let opened = false;
+            let settled = false;
 
             const failTimer = setTimeout(() => {
                 if (!opened) {
-                    reject(new Error("ASR connect timeout"));
+                    settled = true;
+                    reject(new Error("ASR connect timeout: " + url));
                     closeWs();
                 }
             }, 8000);
@@ -166,15 +206,32 @@
                     mode: "2pass",
                 }));
                 streamToAsr = true;
-                resolve(socket);
+                flushPcmChunks();
+                console.log("[talk] ASR open flushed PCM, remaining=", sampleBuf.length);
+                if (!settled) {
+                    settled = true;
+                    resolve(socket);
+                }
             };
             socket.onerror = () => {
                 clearTimeout(failTimer);
-                if (!opened) reject(new Error("ASR WebSocket error"));
+                if (!opened && !settled) {
+                    settled = true;
+                    reject(new Error("ASR WebSocket error: " + url));
+                }
             };
             socket.onclose = () => {
                 if (ws === socket) ws = null;
                 streamToAsr = false;
+                if (!opened && !settled) {
+                    settled = true;
+                    clearTimeout(failTimer);
+                    reject(new Error("ASR WebSocket closed: " + url + " (is --ASR_SERVER set?)"));
+                } else if (awaitingAsrResult) {
+                    awaitingAsrResult = false;
+                    setStatus("ASR closed before result: " + url, true);
+                    resumeListeningAfterUtterance();
+                }
             };
             socket.onmessage = (evt) => {
                 let msg;
@@ -186,6 +243,8 @@
                 const mode = msg.mode || "";
                 const text = msg.text || "";
                 if (mode === "2pass-offline" || mode === "offline") {
+                    awaitingAsrResult = false;
+                    console.log("[talk] ASR result", text.slice(0, 80));
                     setPhase("thinking");
                     sendChat(text);
                     setTimeout(() => {
@@ -196,12 +255,33 @@
         });
     }
 
-    function endUtterance() {
-        if (phase !== "inSpeech" && !streamToAsr) return;
+    function resumeListeningAfterUtterance() {
+        loudMs = 0;
+        quietMs = 0;
+        speechStartedAt = 0;
+        sampleBuf = new Int16Array();
         streamToAsr = false;
         speechOpenPending = false;
-        flushPcm();
+        if (muted) {
+            setPhase("muted");
+            return;
+        }
+        if (!micRunning) {
+            startMicMonitor();
+            return;
+        }
+        setPhase("listening");
+    }
+
+    function endUtterance() {
+        if (phase !== "inSpeech" && !streamToAsr && !speechOpenPending) return;
+        const bytes = sampleBuf.byteLength;
+        console.log("[talk] utterance end bufferedBytes=", bytes);
+        speechOpenPending = false;
+        streamToAsr = false;
+        flushPcmChunks();
         if (ws && ws.readyState === 1) {
+            awaitingAsrResult = true;
             ws.send(JSON.stringify({
                 chunk_size: [5, 10, 5],
                 wav_name: "h5",
@@ -209,13 +289,16 @@
                 chunk_interval: 10,
                 mode: "2pass",
             }));
+            setPhase("thinking");
+            setStatus("Recognizing…");
+        } else {
+            setStatus("ASR not connected — no audio sent (" + asrUrl() + ")", true);
+            resumeListeningAfterUtterance();
         }
         loudMs = 0;
         quietMs = 0;
         speechStartedAt = 0;
-        setPhase("thinking");
-        setStatus("Recognizing…");
-        stopMicMonitor();
+        // Keep Recorder running; only pause VAD via phase.
     }
 
     async function beginUtterance() {
@@ -224,6 +307,7 @@
         speechOpenPending = true;
         speechStartedAt = Date.now();
         quietMs = 0;
+        console.log("[talk] utterance start bufferedSamples=", sampleBuf.length);
         try {
             await openAsrSession();
             speechOpenPending = false;
@@ -234,7 +318,7 @@
             streamToAsr = false;
             closeWs();
             setStatus(e.message || String(e), true);
-            // Stay listening so user can try again
+            els.hint.textContent = "Check --ASR_SERVER and /api/asr";
             if (!muted) setPhase("listening");
         }
     }
@@ -246,31 +330,38 @@
         const now = Date.now();
         const dt = lastProcessAt ? Math.min(80, now - lastProcessAt) : 50;
         lastProcessAt = now;
+        setLevel(powerLevel);
 
-        if (phase === "listening") {
+        // Buffer PCM as soon as we leave idle listening into speech (pending or inSpeech).
+        const capturing = speechOpenPending || streamToAsr || phase === "inSpeech";
+        if (capturing) {
+            appendPcm16(buffer, bufferSampleRate);
+            if (streamToAsr && ws && ws.readyState === 1) {
+                flushPcmChunks();
+            }
+        }
+
+        if (phase === "listening" && !speechOpenPending) {
             if (powerLevel >= VAD.startLevel) {
                 loudMs += dt;
                 quietMs = 0;
-                if (loudMs >= VAD.startMs) beginUtterance();
+                if (loudMs >= VAD.startMs) {
+                    // Start buffering this frame before WS opens
+                    appendPcm16(buffer, bufferSampleRate);
+                    beginUtterance();
+                }
             } else {
                 loudMs = 0;
             }
             return;
         }
 
-        // inSpeech: stream PCM + watch for silence / max length
-        if (streamToAsr && ws && ws.readyState === 1) {
-            const data_48k = buffer[buffer.length - 1];
-            const data_16k = Recorder.SampleData([data_48k], bufferSampleRate, 16000).data;
-            sampleBuf = Int16Array.from([...sampleBuf, ...data_16k]);
-            const chunkSize = 960;
-            while (sampleBuf.length >= chunkSize) {
-                const sendBuf = sampleBuf.slice(0, chunkSize);
-                sampleBuf = sampleBuf.slice(chunkSize);
-                ws.send(sendBuf);
-            }
+        if (speechOpenPending && phase === "listening") {
+            // Waiting for WS; keep buffering (already done above).
+            return;
         }
 
+        // inSpeech: watch for silence / max length
         const spokenMs = speechStartedAt ? now - speechStartedAt : 0;
         if (spokenMs >= VAD.maxSpeechMs) {
             endUtterance();
@@ -354,7 +445,7 @@
 
     async function waitSpeakingEnd() {
         setPhase("speaking");
-        stopMicMonitor();
+        // Do not stop Recorder permanently; pause VAD via phase only.
         for (let i = 0; i < 15; i++) {
             if (await isSpeaking()) break;
             await sleep(400);
@@ -367,7 +458,7 @@
             setPhase("muted");
             return;
         }
-        await startMicMonitor();
+        resumeListeningAfterUtterance();
     }
 
     function sendChat(text) {
@@ -375,11 +466,7 @@
         const cleaned = (text || "").replace(/ +/g, "").trim();
         if (!cleaned || !sid) {
             if (!cleaned) setStatus("No speech detected — listening again");
-            if (muted) {
-                setPhase("muted");
-            } else {
-                startMicMonitor();
-            }
+            resumeListeningAfterUtterance();
             return;
         }
         els.transcript.textContent = cleaned;
@@ -399,8 +486,7 @@
     function setMuted(next) {
         muted = !!next;
         if (muted) {
-            if (phase === "inSpeech") {
-                // Cancel in-progress utterance without chatting
+            if (phase === "inSpeech" || speechOpenPending) {
                 streamToAsr = false;
                 closeWs();
             }
@@ -509,10 +595,13 @@
             if (st === "connected") {
                 setConn(true, "Connected");
                 updateMicChrome();
-            } else if (st === "failed" || st === "disconnected" || st === "closed") {
+            } else if (st === "failed" || st === "closed") {
                 setConn(false, st === "failed" ? "Failed" : "Disconnected");
                 stopMicMonitor();
                 closeWs();
+            } else if (st === "disconnected") {
+                // Transient ICE blip — keep mic / ASR running.
+                setConn(false, "Reconnecting…");
             }
         });
         negotiate().catch((e) => {
