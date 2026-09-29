@@ -67,8 +67,9 @@
         els.micBtn.classList.toggle("busy", busy);
         els.micBtn.classList.toggle("muted", muted);
         els.micBtn.disabled = !els.sessionid.value;
-        if (els.iconMic) els.iconMic.hidden = muted;
-        if (els.iconMute) els.iconMute.hidden = !muted;
+        // SVG ignores the HTML hidden attribute in many browsers — use a CSS class.
+        if (els.iconMic) els.iconMic.classList.toggle("is-hidden", muted);
+        if (els.iconMute) els.iconMute.classList.toggle("is-hidden", !muted);
         els.micBtn.setAttribute("aria-label", muted ? "Unmute microphone" : "Mute microphone");
         els.micBtn.title = muted ? "Unmute" : "Mute";
     }
