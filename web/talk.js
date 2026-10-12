@@ -6,8 +6,8 @@
 
     // Energy VAD defaults (close-talk Chromium); tune in one place
     const VAD = {
-        startLevel: 8,
-        endLevel: 6,
+        startLevel: 6, // 8
+        endLevel: 4, // 6
         startMs: 150,
         endMs: 800,
         minSpeechMs: 400,
