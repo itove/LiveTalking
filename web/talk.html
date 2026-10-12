@@ -115,13 +115,34 @@
             background: linear-gradient(var(--overlay), transparent);
             pointer-events: none;
         }
-        .topbar a {
+        .topbar-actions {
             pointer-events: auto;
+            display: flex;
+            align-items: center;
+            gap: 14px;
+        }
+        .topbar a {
             color: var(--muted);
             text-decoration: none;
             font-size: 0.8rem;
         }
         .topbar a:hover { color: var(--fg); }
+        .icon-btn {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 32px;
+            height: 32px;
+            padding: 0;
+            border: 0;
+            border-radius: 6px;
+            background: transparent;
+            color: var(--muted);
+            cursor: pointer;
+        }
+        .icon-btn:hover { color: var(--fg); }
+        .icon-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+        .icon-btn svg.is-hidden { display: none; }
         .dot {
             width: 8px;
             height: 8px;
@@ -137,7 +158,17 @@
 <body>
     <div class="topbar">
         <span id="connLabel"><span class="dot" id="connDot"></span><span id="connText">Connecting…</span></span>
-        <a href="/index.html">Operator</a>
+        <div class="topbar-actions">
+            <button type="button" class="icon-btn" id="btnMaximize" aria-label="Maximize" title="Maximize">
+                <svg id="iconExpand" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M8 3H3v5M16 3h5v5M8 21H3v-5M16 21h5v-5"/>
+                </svg>
+                <svg id="iconCompress" class="is-hidden" viewBox="0 0 24 24" aria-hidden="true">
+                    <path d="M3 8h5V3M21 8h-5V3M3 16h5v5M21 16h-5v5"/>
+                </svg>
+            </button>
+            <a href="/index.html">Operator</a>
+        </div>
     </div>
 
     <div class="stage">

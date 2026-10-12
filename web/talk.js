@@ -27,6 +27,9 @@
         connText: document.getElementById("connText"),
         iconMic: document.getElementById("iconMic"),
         iconMute: document.getElementById("iconMute"),
+        btnMaximize: document.getElementById("btnMaximize"),
+        iconExpand: document.getElementById("iconExpand"),
+        iconCompress: document.getElementById("iconCompress"),
     };
 
     let pc = null;
@@ -520,6 +523,43 @@
         }
         setMuted(true);
     });
+
+    // ── Fullscreen maximize ───────────────────────────────────────
+    function isFullscreen() {
+        return !!(document.fullscreenElement || document.webkitFullscreenElement);
+    }
+
+    function updateMaximizeChrome() {
+        const fs = isFullscreen();
+        if (els.iconExpand) els.iconExpand.classList.toggle("is-hidden", fs);
+        if (els.iconCompress) els.iconCompress.classList.toggle("is-hidden", !fs);
+        if (els.btnMaximize) {
+            els.btnMaximize.setAttribute("aria-label", fs ? "Exit fullscreen" : "Maximize");
+            els.btnMaximize.title = fs ? "Exit fullscreen" : "Maximize";
+        }
+    }
+
+    function toggleFullscreen() {
+        if (isFullscreen()) {
+            const exit = document.exitFullscreen || document.webkitExitFullscreen;
+            if (exit) {
+                Promise.resolve(exit.call(document)).catch(() => {});
+            }
+            return;
+        }
+        const el = document.documentElement;
+        const req = el.requestFullscreen || el.webkitRequestFullscreen;
+        if (req) {
+            Promise.resolve(req.call(el)).catch(() => {});
+        }
+    }
+
+    if (els.btnMaximize) {
+        els.btnMaximize.addEventListener("click", toggleFullscreen);
+    }
+    document.addEventListener("fullscreenchange", updateMaximizeChrome);
+    document.addEventListener("webkitfullscreenchange", updateMaximizeChrome);
+    updateMaximizeChrome();
 
     // ── WebRTC ────────────────────────────────────────────────────
     function negotiate() {
