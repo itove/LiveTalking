@@ -21,6 +21,25 @@ def str_or_int(value):
         return value
 
 
+def _env_bool(name, default=False):
+    """Read a boolean env var (1/true/yes/on)."""
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _env_int(name, default):
+    """Read an int env var; fall back to default on missing/invalid."""
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        return int(raw.strip())
+    except ValueError:
+        return default
+
+
 def _yaml_to_args(yaml_cfg):
     """将 YAML 字典中的 key 转换为 argparse 兼容的 `--key` 形式。
 
@@ -85,6 +104,18 @@ def parse_args():
                         help="served ASR model id from GET /v1/models on ASR_SERVER")
     parser.add_argument('--asr_language', type=str, default='',
                         help="optional ISO language hint for transcriptions (empty = auto)")
+
+    # ─── Wake word (talk.html: only reply after the assistant's name is heard) ──
+    # Defaults come from env (WAKE_ENABLE / WAKE_WORD / WAKE_WINDOW) so .env works.
+    parser.add_argument('--wake_enable', action=argparse.BooleanOptionalAction,
+                        default=_env_bool('WAKE_ENABLE', False),
+                        help="talk.html wake-by-name gate. Env: WAKE_ENABLE (default off)")
+    parser.add_argument('--wake_word', type=str,
+                        default=os.getenv('WAKE_WORD', '小助手'),
+                        help="wake name(s); separate homophones with | or , . Env: WAKE_WORD")
+    parser.add_argument('--wake_window', type=int,
+                        default=_env_int('WAKE_WINDOW', 25),
+                        help="seconds to stay awake after a wake/accepted utterance. Env: WAKE_WINDOW")
 
     # ─── LLM ──────────────────────────────────────────────────────────
     parser.add_argument('--llm_provider', type=str, default='dashscope',

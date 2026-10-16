@@ -188,6 +188,20 @@ async def sse_handler(request):
     return response
 
 
+async def talk_config(request):
+    """Public: only the settings /talk.html needs (never the whole opt)."""
+    opt = request.app.get("opt")
+    try:
+        window = int(getattr(opt, "wake_window", 25) or 25)
+    except (TypeError, ValueError):
+        window = 25
+    return json_ok(data={
+        "wake_enable": bool(getattr(opt, "wake_enable", False)),
+        "wake_word": str(getattr(opt, "wake_word", "") or ""),
+        "wake_window": window,
+    })
+
+
 async def admin_config(request):
     """Admin: 获取全局配置参数"""
     try:
@@ -250,6 +264,7 @@ def setup_routes(app):
     app.router.add_post("/record", record)
     app.router.add_post("/interrupt_talk", interrupt_talk)
     app.router.add_post("/is_speaking", is_speaking)
+    app.router.add_get("/api/talk_config", talk_config)
     app.router.add_get("/api/admin/config", admin_config)
     app.router.add_get("/api/admin/sessions", admin_sessions)
     app.router.add_get('/sse', sse_handler)

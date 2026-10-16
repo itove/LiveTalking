@@ -108,6 +108,8 @@ python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 
 
 End-user talk page: `http://<host>:<listenport>/talk.html` (full-window video, hands-free VAD; mic button mutes). Operator console remains `/` / `index.html`.
 
+Optional wake-by-name for `/talk.html` (off by default; set in `.env` or the environment): `WAKE_ENABLE=1`, `WAKE_WORD=小助手|小助` (homophones split by `|` or `,`), `WAKE_WINDOW=25` (seconds to stay awake after the name is heard). Query params `?wake_enable=1&wake=名字&wake_window=25` override per page load.
+
 If CANN is not sourced, `import torch` used to abort on missing `libhccl.so`. If you see `Duplicated key 'pinned_reserve_segment_size_mb'` and a core dump, torch and torch-npu do not match (C++ `abort()`, not a Python exception). This repo checks versions and probes the import in a child process, then falls back to CPU/CUDA. For 910B3 inference you still must source CANN and install a matching pair.
 
 Set `ASCEND_DEVICE_ID` to pick a card (default 0). Logs should show `Using npu:0 for inference.`, and both `inferfps` and `finalfps` must be ≥ 25 for real-time playback.

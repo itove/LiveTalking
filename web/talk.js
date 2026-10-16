@@ -51,6 +51,128 @@
     let lastProcessAt = 0;
     let lastLevelUiAt = 0;
 
+    // ── Wake-by-name gate ─────────────────────────────────────────
+    // Config comes from /api/talk_config (env WAKE_ENABLE / WAKE_WORD /
+    // WAKE_WINDOW); query params ?wake_enable=1&wake=名字&wake_window=25 override.
+    // Until config loads, the gate stays disabled so nothing is dropped.
+    const WAKE_DEFAULT_WINDOW_S = 25;
+    const WAKE_GREETING_ONLY = /^(你好|您好|嗨|嘿|喂|哈喽|哎|诶|hi|hello|hey|ok|okay)+$/;
+    const wake = { enabled: false, label: "", regexes: [], windowMs: WAKE_DEFAULT_WINDOW_S * 1000 };
+    let awakeUntil = 0;
+    let wakeStatusShown = "";
+
+    function normalizeForWake(s) {
+        return String(s || "").toLowerCase().replace(/[\s\p{P}\p{S}]+/gu, "");
+    }
+
+    function escapeRegex(ch) {
+        return ch.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+    }
+
+    // "小助手" -> /小[\s\p{P}]*助[\s\p{P}]*手/iu so "小助手，" and "小 助 手" both match.
+    function buildNameRegex(name) {
+        const chars = Array.from(normalizeForWake(name));
+        if (!chars.length) return null;
+        return new RegExp(chars.map(escapeRegex).join("[\\s\\p{P}]*"), "iu");
+    }
+
+    function truthy(v) {
+        return /^(1|true|yes|on)$/i.test(String(v == null ? "" : v).trim());
+    }
+
+    function applyWakeConfig(cfg) {
+        const q = (k) => params.get(k);
+        const enabled = q("wake_enable") !== null ? truthy(q("wake_enable")) : !!cfg.wake_enable;
+        const rawWord = q("wake") !== null ? q("wake") : (cfg.wake_word || "");
+        let windowS = Number(q("wake_window") !== null ? q("wake_window") : cfg.wake_window);
+        if (!Number.isFinite(windowS) || windowS <= 0) windowS = WAKE_DEFAULT_WINDOW_S;
+
+        const names = String(rawWord).split(/[|,，、]/).map((s) => s.trim()).filter(Boolean);
+        const regexes = names.map(buildNameRegex).filter(Boolean);
+        if (enabled && !regexes.length) {
+            console.warn("[talk] wake enabled but WAKE_WORD is empty — wake gate disabled");
+        }
+        wake.enabled = enabled && regexes.length > 0;
+        wake.regexes = regexes;
+        wake.label = names[0] || "";
+        wake.windowMs = windowS * 1000;
+        awakeUntil = 0;
+        console.log("[talk] wake config", { enabled: wake.enabled, names, windowS });
+        refreshWakeHint();
+    }
+
+    async function loadWakeConfig() {
+        let cfg = {};
+        try {
+            const res = await fetch("/api/talk_config", { cache: "no-store" });
+            const body = await res.json();
+            if (body && body.code === 0 && body.data) cfg = body.data;
+        } catch (e) {
+            console.warn("[talk] /api/talk_config failed; wake disabled unless set via query", e);
+        }
+        applyWakeConfig(cfg);
+    }
+
+    function isAwake() {
+        return Date.now() < awakeUntil;
+    }
+
+    function touchAwake() {
+        awakeUntil = Date.now() + wake.windowMs;
+        refreshWakeHint();
+    }
+
+    function matchWake(text) {
+        let best = null;
+        for (const re of wake.regexes) {
+            const m = re.exec(text);
+            if (m && (!best || m.index < best.index)) best = m;
+        }
+        return best;
+    }
+
+    // Remove the wake name (and a lone greeting before it) so the LLM gets the request.
+    function stripWake(text, m) {
+        const before = text.slice(0, m.index);
+        const after = text.slice(m.index + m[0].length);
+        const beforeNorm = normalizeForWake(before);
+        const keepBefore = beforeNorm && !WAKE_GREETING_ONLY.test(beforeNorm);
+        return ((keepBefore ? before : "") + after).replace(/^[\s\p{P}]+/u, "").trim();
+    }
+
+    // -> { action: "send" | "ignore" | "wakeOnly", text? }
+    function applyWakeGate(cleaned) {
+        const m = matchWake(cleaned);
+        if (!m) return isAwake() ? { action: "send", text: cleaned } : { action: "ignore" };
+        const rest = stripWake(cleaned, m);
+        return rest ? { action: "send", text: rest } : { action: "wakeOnly" };
+    }
+
+    function listenStatus() {
+        if (!wake.enabled || isAwake()) return "Listening…";
+        return "Say “" + wake.label + "” to talk";
+    }
+
+    function listenHint() {
+        if (!wake.enabled) return "Just speak — tap mic to mute";
+        if (isAwake()) {
+            const s = Math.max(0, Math.ceil((awakeUntil - Date.now()) / 1000));
+            return "Awake · " + s + "s left — tap mic to mute";
+        }
+        return "Say “" + wake.label + "” to wake — tap mic to mute";
+    }
+
+    // Keeps the listening hint/status in sync (countdown + lapse back to asleep).
+    function refreshWakeHint() {
+        if (muted || phase !== "listening") return;
+        els.hint.textContent = listenHint();
+        const next = listenStatus();
+        if (els.status.textContent === wakeStatusShown) {
+            setStatus(next);
+            wakeStatusShown = next;
+        }
+    }
+
     function asrUrl() {
         const proto = window.location.protocol === "https:" ? "wss://" : "ws://";
         return proto + window.location.host + "/api/asr";
@@ -98,8 +220,10 @@
             return;
         }
         if (next === "listening") {
-            setStatus("Listening…");
-            els.hint.textContent = "Just speak — tap mic to mute";
+            const s = listenStatus();
+            setStatus(s);
+            wakeStatusShown = s;
+            els.hint.textContent = listenHint();
         } else if (next === "inSpeech") {
             setStatus("Hearing you…");
             els.hint.textContent = "Pause when finished";
@@ -461,16 +585,40 @@
             setPhase("muted");
             return;
         }
+        // Start the awake window after the reply, not when the question was sent.
+        if (wake.enabled) touchAwake();
         resumeListeningAfterUtterance();
     }
 
     function sendChat(text) {
         const sid = els.sessionid.value;
-        const cleaned = (text || "").replace(/ +/g, "").trim();
+        let cleaned = (text || "").replace(/ +/g, "").trim();
         if (!cleaned || !sid) {
             if (!cleaned) setStatus("No speech detected — listening again");
             resumeListeningAfterUtterance();
             return;
+        }
+        if (wake.enabled) {
+            const gate = applyWakeGate(cleaned);
+            if (gate.action === "ignore") {
+                // Not addressed to the avatar: show it dimmed, send nothing.
+                els.transcript.textContent = cleaned;
+                els.transcript.style.opacity = "0.45";
+                resumeListeningAfterUtterance();
+                return;
+            }
+            els.transcript.style.opacity = "";
+            touchAwake();
+            if (gate.action === "wakeOnly") {
+                els.transcript.textContent = cleaned;
+                resumeListeningAfterUtterance();
+                setStatus("I'm listening…");
+                wakeStatusShown = "I'm listening…";
+                return;
+            }
+            cleaned = gate.text;
+        } else {
+            els.transcript.style.opacity = "";
         }
         els.transcript.textContent = cleaned;
         fetch("/human", {
@@ -663,5 +811,7 @@
         }
     });
 
+    loadWakeConfig();
+    setInterval(refreshWakeHint, 1000);
     startRtc();
 })();

@@ -28,6 +28,13 @@ ASR_SERVER: ''                 # Qwen3-ASR base URL, no trailing slash (not TTS_
 asr_model: ''                  # served id from GET /v1/models on ASR_SERVER
 asr_language: ''               # optional ISO language hint; empty = auto
 
+# -------- Wake word (talk.html) ----------------------------------------
+# Intentionally NOT set here: values in this file would override the env vars.
+# Configure via .env / environment, or CLI flags:
+#   WAKE_ENABLE=1               # off by default; --wake_enable / --no-wake_enable
+#   WAKE_WORD=小助手|小助        # accepted names/homophones, split on | or ,
+#   WAKE_WINDOW=25              # seconds to stay awake after a wake-up
+
 # -------- LLM ----------------------------------------------------------
 llm_provider: dashscope        # dashscope / orcarouter / openai (aliases: vllm, custom, local)
 llm_model: ''                  # model override; required for openai/vLLM (GET /v1/models id)

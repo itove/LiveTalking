@@ -112,6 +112,8 @@ python app.py --transport webrtc --model wav2lip --avatar_id wav2lip256_avatar1 
 
 端用户对话页：`http://<host>:<listenport>/talk.html`（全屏视频，免按键说话；麦克风按钮可静音）。运营商控制台仍是 `/` / `index.html`。
 
+`/talk.html` 可选“呼名唤醒”（默认关闭，在 `.env` 或环境变量中设置）：`WAKE_ENABLE=1`、`WAKE_WORD=小助手|小助`（谐音用 `|` 或 `,` 分隔）、`WAKE_WINDOW=25`（听到名字后保持唤醒的秒数）。页面查询参数 `?wake_enable=1&wake=名字&wake_window=25` 可临时覆盖。
+
 未 source CANN 时，`import torch` 会因缺少 `libhccl.so` 直接退出。若出现 `Duplicated key 'pinned_reserve_segment_size_mb'` 并 core dump，说明 `torch` 与 `torch-npu` 版本不匹配（C++ abort，Python 捕获不到）。本仓库会先核对版本并在子进程里探测导入，失败则回退到 CPU/CUDA。要真正用 910B3，必须先 source，且两套包主次版本一致。
 
 可用环境变量 `ASCEND_DEVICE_ID` 指定卡号（默认 0）。日志中应出现 `Using npu:0 for inference.`，且 `inferfps` / `finalfps` 均需 ≥ 25 才算实时。
